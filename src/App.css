@@ -1,0 +1,90 @@
+/* Add this to use Inter font. Make sure to include the Google Fonts link in your public/index.html:
+   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+*/
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+/* You can also apply Inter to main containers if needed:
+.main-container, .App {
+  font-family: 'Inter', sans-serif;
+}
+*/
+
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Remove default dialog background and border */
+dialog.modal {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Remove default outline on focus for dialog */
+dialog:focus-visible {
+  outline: none;
+}
+
+/* Hide native date input icon in Chrome, Safari, Edge, Opera */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  display: none;
+}
+
+/* Hide native date input icon in Firefox */
+input[type="date"]::-moz-calendar-picker-indicator {
+  opacity: 0;
+  display: none;
+}
+
+/* Hide native date input icon in Edge (old) */
+input[type="date"]::-ms-input-placeholder {
+  color: transparent;
+}
+
+.hero-face-crop {
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  object-fit: cover;
+  object-position: center;
+  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.5);
+}
