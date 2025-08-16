@@ -169,7 +169,7 @@ export default function HomePage() {
       const criticalHeroes = heroList.slice(0, 10); // Preload first 10 heroes
       criticalHeroes.forEach(hero => {
         const img = new Image();
-        img.src = `/public/heroes/${hero.role}/${hero.image.replace('.png', '.webp')}`;
+        img.src = `/public/heroes/${hero.role.toLowerCase()}/${hero.image.replace('.png', '.webp')}`;
       });
     }
   }, [heroList]);
