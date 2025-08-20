@@ -11,7 +11,8 @@ export default function DraftControls({
   handleSkipBan,
   handleResetDraft,
   handleSaveDraft,
-  isSavingDraft
+  isSavingDraft,
+  isLaneOrderModified = false
 }) {
   return (
     <div className="flex justify-center items-center gap-6 mt-8">
@@ -65,6 +66,14 @@ export default function DraftControls({
             'Save Draft'
           )}
         </button>
+      )}
+      
+      {/* Lane modification indicator */}
+      {isLaneOrderModified && (
+        <div className="px-4 py-2 rounded-lg bg-purple-600 text-white font-semibold flex items-center gap-2">
+          <span className="text-xs">🔄</span>
+          Custom Lane Order
+        </div>
       )}
     </div>
   );

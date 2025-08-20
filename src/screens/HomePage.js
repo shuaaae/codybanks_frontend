@@ -85,6 +85,10 @@ export default function HomePage() {
   const [winner, setWinner] = useState('');
   const [blueTeam, setBlueTeam] = useState('');
   const [redTeam, setRedTeam] = useState('');
+  
+  // Edit match state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingMatchId, setEditingMatchId] = useState(null);
 
 
   // User session timeout: 30 minutes
@@ -217,6 +221,10 @@ export default function HomePage() {
     setHeroPickerMode(null);
     setPickerStep('lane');
     
+    // Reset editing state
+    setIsEditing(false);
+    setEditingMatchId(null);
+    
     // Reset form inputs (for backward compatibility)
     const matchDateInput = document.getElementById('match-date-input');
     const winnerInput = document.getElementById('winner-input');
@@ -227,6 +235,68 @@ export default function HomePage() {
     if (winnerInput) winnerInput.value = '';
     if (blueTeamInput) blueTeamInput.value = '';
     if (redTeamInput) redTeamInput.value = '';
+  }
+
+  // Function to handle editing a match
+  function handleEditMatch(match) {
+    setIsEditing(true);
+    setEditingMatchId(match.id);
+
+    // Basic fields
+    setMatchDate(match.match_date);
+    setWinner(match.winner);
+    setNotes(match.notes || '');
+    setPlaystyle(match.playstyle || '');
+
+    const blue = match.teams?.find(t => t.team_color === 'blue');
+    const red  = match.teams?.find(t => t.team_color === 'red');
+
+    // Teams names
+    setBlueTeam(blue?.team || '');
+    setRedTeam(red?.team || '');
+
+    // Bans
+    setBanning({
+      blue1: blue?.banning_phase1 || [],
+      blue2: blue?.banning_phase2 || [],
+      red1:  red?.banning_phase1  || [],
+      red2:  red?.banning_phase2  || [],
+    });
+
+    // Picks (normalize shape)
+    const normP = (p) => ({ lane: p.lane, hero: p.hero });
+    setPicks({
+      blue: {
+        1: (blue?.picks1 || []).map(normP),
+        2: (blue?.picks2 || []).map(normP),
+      },
+      red: {
+        1: (red?.picks1 || []).map(normP),
+        2: (red?.picks2 || []).map(normP),
+      },
+    });
+
+    // Objective counts
+    if (match.turtle_taken) {
+      const [b, r] = match.turtle_taken.split('-').map(Number);
+      setTurtleTakenBlue(b || '');
+      setTurtleTakenRed(r || '');
+    } else {
+      setTurtleTakenBlue('');
+      setTurtleTakenRed('');
+    }
+
+    if (match.lord_taken) {
+      const [b, r] = match.lord_taken.split('-').map(Number);
+      setLordTakenBlue(b || '');
+      setLordTakenRed(r || '');
+    } else {
+      setLordTakenBlue('');
+      setLordTakenRed('');
+    }
+
+    // Open modal
+    setModalState('export');
   }
 
   // Function to start the pick flow
@@ -296,31 +366,110 @@ export default function HomePage() {
     }
   }
 
-  async function handleExportConfirm() {
-    // Use state variables instead of getting values from DOM
-    // Basic validation with specific field checking
-    const missingFields = [];
-    if (!matchDate) missingFields.push('Date');
-    if (!winner) missingFields.push('Results');
-    if (!blueTeam) missingFields.push('Blue Team');
-    if (!redTeam) missingFields.push('Red Team');
+  async function handleExportConfirm({ banning, picks }) {
+    try {
+      const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
+      const currentTeamId = latestTeam?.id;
+
+      const payload = {
+        match_date: matchDate,
+        winner,
+        notes,
+        playstyle,
+        turtle_taken: `${turtleTakenBlue || 0}-${turtleTakenRed || 0}`,
+        lord_taken:   `${lordTakenBlue || 0}-${lordTakenRed || 0}`,
+        team_id: currentTeamId,
+      };
+
+      if (isEditing && editingMatchId) {
+        // One request only; backend recreates children from teams
+        const updated = await updateMatch(editingMatchId, payload, { banning, picks });
+        // update local list with returned record
+        setMatches(prev => prev.map(m => (m.id === updated.id ? updated : m)));
+        showAlert('Match updated!', 'success');
+      } else {
+        await createMatch(payload, { banning, picks }); // keep your create flow
+        showAlert('Match exported!', 'success');
+      }
+
+      setModalState('none');
+      setIsEditing(false);
+      setEditingMatchId(null);
+      resetFormData();
+    } catch (e) {
+      console.error(e);
+      showAlert('Failed to save match', 'error');
+    }
+  }
+
+  // Add (or update) updateMatch helper in the same file:
+  async function updateMatch(matchId, matchPayload, { banning, picks }) {
+    // Get the current team ID from localStorage
+    const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
+    const currentTeamId = latestTeam?.id;
     
-    if (missingFields.length > 0) {
-      const fieldList = missingFields.join(', ');
-      showAlert(`Please fill in the following required fields: ${fieldList}`, 'error');
-      return;
+    // 1) Update parent match with teams data
+    const fullMatchPayload = {
+      ...matchPayload,
+      teams: [
+        {
+          team: blueTeam,
+          team_color: 'blue',
+          banning_phase1: banning.blue1 || [],
+          banning_phase2: banning.blue2 || [],
+          picks1: picks.blue?.[1] || [],
+          picks2: picks.blue?.[2] || [],
+        },
+        {
+          team: redTeam,
+          team_color: 'red',
+          banning_phase1: banning.red1 || [],
+          banning_phase2: banning.red2 || [],
+          picks1: picks.red?.[1] || [],
+          picks2: picks.red?.[2] || [],
+        }
+      ]
+    };
+
+    // Prepare headers with team ID for backend compatibility
+    const headers = { 
+      'Content-Type': 'application/json', 
+      'Accept': 'application/json' 
+    };
+    
+    if (currentTeamId) {
+      headers['X-Active-Team-ID'] = currentTeamId;
     }
 
+    const res = await fetch(`/public/api/matches/${matchId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(fullMatchPayload),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`Update match failed: ${res.status} ${txt}`);
+    }
+
+    // Backend now handles all team updates in one transaction
+    // Return the updated match data for frontend state update
+    const updated = await res.json();
+    return updated;
+  }
+
+  // Create match helper for new matches
+  async function createMatch(matchPayload, { banning, picks }) {
     // Get player assignments for blue and red teams from localStorage
     let bluePlayers = [];
     let redPlayers = [];
+    let latestTeam = null;
+    
     try {
-      const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
+      latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
       if (latestTeam && latestTeam.teamName && latestTeam.players) {
         if (latestTeam.teamName === blueTeam) bluePlayers = latestTeam.players;
         if (latestTeam.teamName === redTeam) redPlayers = latestTeam.players;
       }
-      // If you support multiple teams in localStorage, you may need to adjust this logic
     } catch (e) {}
 
     // Helper to get player name by lane for a team
@@ -330,21 +479,8 @@ export default function HomePage() {
       return found && found.name ? found.name : '';
     };
 
-    // Get team_id from localStorage
-    const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
-    const teamId = latestTeam?.id;
-    
-    console.log('Creating match for team:', { latestTeam, teamId });
-    
-    // Use your state for bans and picks
-    const payload = {
-      match_date: matchDate,
-      winner: winner,
-      turtle_taken: (turtleTakenBlue || turtleTakenRed) ? `${turtleTakenBlue || 0}-${turtleTakenRed || 0}` : null,
-      lord_taken: (lordTakenBlue || lordTakenRed) ? `${lordTakenBlue || 0}-${lordTakenRed || 0}` : null,
-      notes: notes,
-      playstyle: playstyle,
-      team_id: teamId, // Add team_id to payload
+    const fullPayload = {
+      ...matchPayload,
       teams: [
         {
           team: blueTeam,
@@ -385,92 +521,42 @@ export default function HomePage() {
       ]
     };
 
-    try {
-      console.log('Sending payload:', payload); // Debug log
-      const response = await fetch('/public/api/matches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+    // Prepare headers with team ID for backend compatibility
+    const headers = { 
+      'Content-Type': 'application/json', 
+      'Accept': 'application/json' 
+    };
+    
+    if (latestTeam?.id) {
+      headers['X-Active-Team-ID'] = latestTeam.id;
+    }
+
+    const response = await fetch('/public/api/matches', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(fullPayload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Create match failed: ${response.status}`);
+    }
+
+    // Save to localStorage for Player Statistics
+    if (latestTeam && (blueTeam === latestTeam.teamName || redTeam === latestTeam.teamName)) {
+      localStorage.setItem('latestMatch', JSON.stringify(fullPayload));
+    }
+
+    // Refresh matches list
+    clearMatchesCache();
+    const data = await getMatchesData(matchPayload.team_id);
+    if (data && data.length > 0) {
+      data.sort((a, b) => {
+        if (a.match_date === b.match_date) return b.id - a.id;
+        return new Date(b.match_date) - new Date(a.match_date);
       });
-      
-      if (response.ok) {
-        // Save the exported match to localStorage for Player Statistics
-        // Only save if the match involves the current active team
-        const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
-        if (latestTeam && (blueTeam === latestTeam.teamName || redTeam === latestTeam.teamName)) {
-          localStorage.setItem('latestMatch', JSON.stringify(payload));
-        }
-        
-        // Clear form data
-        setModalState('none');
-        setTurtleTakenBlue('');
-        setTurtleTakenRed('');
-        setLordTakenBlue('');
-        setLordTakenRed('');
-        setNotes('');
-        setPlaystyle('');
-        
-        // Reset form field states
-        setMatchDate('');
-        setWinner('');
-        setBlueTeam('');
-        setRedTeam('');
-        
-        // Reset banning and picks
-        setBanning({
-          blue1: [], blue2: [], red1: [], red2: []
-        });
-        setPicks({ blue: { 1: [], 2: [] }, red: { 1: [], 2: [] } });
-        
-        // Reset pick flow state
-        setCurrentPickSession(null);
-        setHeroPickerMode(null);
-        setPickerStep('lane');
-        setHeroPickerSelected([]);
-        
-        // Show refreshing state
-        setIsRefreshing(true);
-        
-        // Clear the matches cache to force a fresh fetch
-        clearMatchesCache();
-        
-        // Refetch matches for current team only
-        const currentTeamData = JSON.parse(localStorage.getItem('latestTeam'));
-        const teamId = currentTeamData?.id;
-        
-        // Reload matches data after clearing cache
-        try {
-          // Add a small delay to show the refresh state
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          const data = await getMatchesData(teamId);
-          if (data && data.length > 0) {
-            data.sort((a, b) => {
-              if (a.match_date === b.match_date) return b.id - a.id;
-              return new Date(b.match_date) - new Date(a.match_date);
-            });
-            setMatches(data);
-          } else {
-            setMatches([]);
-          }
-        } catch (error) {
-          console.error('Error refetching matches after export:', error);
-          // On error, still clear the form and close modal
-          setMatches([]);
-        } finally {
-          setIsRefreshing(false);
-          // Show success message with more details
-          showAlert('Match exported successfully! The match has been added to your data table.', 'success');
-        }
-      } else {
-        // Get the error response from the server
-        const errorData = await response.text();
-        console.error('Server error:', response.status, errorData);
-        showAlert(`Failed to export match: ${response.status} - ${errorData}`, 'error');
-      }
-    } catch (err) {
-      console.error('Network error:', err);
-      showAlert('Network error: ' + err.message, 'error');
+      setMatches(data);
+    } else {
+      setMatches([]);
     }
   }
 
@@ -486,7 +572,20 @@ export default function HomePage() {
   // Delete match handler
   async function handleDeleteMatch(matchId) {
     try {
-      const response = await fetch(`/public/api/matches/${matchId}`, { method: 'DELETE' });
+      // Get the current team ID from localStorage
+      const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
+      const currentTeamId = latestTeam?.id;
+      
+      // Prepare headers with team ID for backend compatibility
+      const headers = {};
+      if (currentTeamId) {
+        headers['X-Active-Team-ID'] = currentTeamId;
+      }
+      
+      const response = await fetch(`/public/api/matches/${matchId}`, { 
+        method: 'DELETE',
+        headers
+      });
       if (response.ok) {
         // Clear cache to ensure fresh data
         clearMatchesCache();
@@ -544,6 +643,7 @@ export default function HomePage() {
                 setDeleteConfirmMatch(match);
                 setModalState('deleteConfirm');
               }}
+              onEditMatch={handleEditMatch}
               heroMap={heroMap}
               setCurrentPage={setCurrentPage}
             />
@@ -594,6 +694,9 @@ export default function HomePage() {
         setPicks={setPicks}
         heroList={heroList}
         setModalState={setModalState}
+        isEditing={isEditing}
+        editingMatchId={editingMatchId}
+        match={matches.find(m => m.id === editingMatchId)}
       />
       {/* Lane Select Modal */}
       <LaneSelectModal

@@ -1,5 +1,5 @@
 import React from 'react';
-import { FaTrash } from 'react-icons/fa';
+import { FaTrash, FaEdit } from 'react-icons/fa';
 
 // Optimized hero image component
 const OptimizedHeroImage = React.memo(({ heroName, size = 40, isBan = false, className = "", heroMap }) => {
@@ -123,6 +123,7 @@ export default function MatchTable({
   hoveredMatchId, 
   setHoveredMatchId, 
   onDeleteMatch, 
+  onEditMatch,
   heroMap,
   setCurrentPage
 }) {
@@ -175,8 +176,8 @@ export default function MatchTable({
               <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[220px]">Banning Phase 1</th>
               <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[220px]">Picks</th>
               <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[220px]">Banning Phase 2</th>
-              <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[220px] rounded-tr-xl">Picks</th>
-              <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[60px]">Delete</th>
+              <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[220px]">Picks</th>
+              <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[100px] rounded-tr-xl">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -325,16 +326,25 @@ export default function MatchTable({
                           : null}
                       </div>
                     </td>
-                   {/* Delete button: only show on first team row for each match */}
+                   {/* Action buttons: only show on first team row for each match */}
                    {idx === 0 && (
                      <td className="py-3 px-4 text-center align-middle" rowSpan={match.teams.length}>
-                       <button
-                         onClick={() => onDeleteMatch(match)}
-                         className="delete-button text-red-500 hover:text-red-700 focus:outline-none"
-                         title="Delete match"
-                       >
-                         <FaTrash size={20} />
-                       </button>
+                       <div className="flex items-center justify-center gap-2">
+                         <button
+                           onClick={() => onEditMatch(match)}
+                           className="edit-button text-blue-500 hover:text-blue-700 focus:outline-none"
+                           title="Edit match"
+                         >
+                           <FaEdit size={20} />
+                         </button>
+                         <button
+                           onClick={() => onDeleteMatch(match)}
+                           className="delete-button text-red-500 hover:text-red-700 focus:outline-none"
+                           title="Delete match"
+                         >
+                           <FaTrash size={20} />
+                         </button>
+                       </div>
                      </td>
                    )}
                   </tr>

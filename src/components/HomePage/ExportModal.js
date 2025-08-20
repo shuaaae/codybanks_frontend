@@ -51,7 +51,8 @@ export default function ExportModal({
   onPickClick,
   setBanning,
   setPicks,
-  heroList = []
+  heroList = [],
+  isEditing = false
 }) {
   const [showDraft, setShowDraft] = useState(false);
 
@@ -67,6 +68,12 @@ export default function ExportModal({
   const [selectedDraftSlot, setSelectedDraftSlot] = useState(null); // { type: 'ban'|'pick', team: 'blue'|'red', index: number }
   const [draftSlotSearch, setDraftSlotSearch] = useState(''); // For draft slot editing modal
 
+  // Add lane assignment state
+  const [laneAssignments, setLaneAssignments] = useState({
+    blue: [null, null, null, null, null], // [exp, jungler, mid, gold, roam]
+    red: [null, null, null, null, null]
+  });
+
   if (!isOpen) return null;
 
   const handleBackgroundClick = (e) => {
@@ -79,7 +86,7 @@ export default function ExportModal({
 
   // Handle comprehensive draft for both teams
   const handleComprehensiveDraft = () => {
-    // Initialize complete draft steps with proper MOBA draft order
+    // Initialize complete draft steps with flexible lane assignments
     // Draft phase order: blue-red-blue-red-blue-red (ban), blue-red-blue-red-blue-red (pick), blue-red-blue-red (ban), blue-red-blue-red (pick)
     const completeDraftSteps = [
       // Ban Phase 1 (6 bans: blue-red-blue-red-blue-red)
@@ -90,13 +97,13 @@ export default function ExportModal({
       { type: 'ban', team: 'blue', step: 4, phase: 1 },
       { type: 'ban', team: 'red', step: 5, phase: 1 },
       
-      // Pick Phase 1 (6 picks: blue-red-red-blue-blue-red)
-      { type: 'pick', team: 'blue', lane: 'exp', label: 'Exp Lane', role: 'Fighter', step: 6, phase: 1 },
-      { type: 'pick', team: 'red', lane: 'exp', label: 'Exp Lane', role: 'Fighter', step: 7, phase: 1 },
-      { type: 'pick', team: 'red', lane: 'jungler', label: 'Jungler', role: 'Assassin', step: 8, phase: 1 },
-      { type: 'pick', team: 'blue', lane: 'jungler', label: 'Jungler', role: 'Assassin', step: 9, phase: 1 },
-      { type: 'pick', team: 'blue', lane: 'mid', label: 'Mid Lane', role: 'Mage', step: 10, phase: 1 },
-      { type: 'pick', team: 'red', lane: 'mid', label: 'Mid Lane', role: 'Mage', step: 11, phase: 1 },
+      // Pick Phase 1 (6 picks: blue-red-red-blue-blue-red) - lanes will be determined by user assignments
+      { type: 'pick', team: 'blue', step: 6, phase: 1, slotIndex: 0 },
+      { type: 'pick', team: 'red', step: 7, phase: 1, slotIndex: 0 },
+      { type: 'pick', team: 'red', step: 8, phase: 1, slotIndex: 1 },
+      { type: 'pick', team: 'blue', step: 9, phase: 1, slotIndex: 1 },
+      { type: 'pick', team: 'blue', step: 10, phase: 1, slotIndex: 2 },
+      { type: 'pick', team: 'red', step: 11, phase: 1, slotIndex: 2 },
       
       // Ban Phase 2 (4 bans: red-blue-red-blue)
       { type: 'ban', team: 'red', step: 12, phase: 2 },
@@ -104,18 +111,148 @@ export default function ExportModal({
       { type: 'ban', team: 'red', step: 14, phase: 2 },
       { type: 'ban', team: 'blue', step: 15, phase: 2 },
       
-      // Pick Phase 2 (4 picks: red-blue-blue-red)
-      { type: 'pick', team: 'red', lane: 'gold', label: 'Gold Lane', role: 'Marksman', step: 16, phase: 2 },
-      { type: 'pick', team: 'blue', lane: 'gold', label: 'Gold Lane', role: 'Marksman', step: 17, phase: 2 },
-      { type: 'pick', team: 'blue', lane: 'roam', label: 'Roam', role: 'Support', step: 18, phase: 2 },
-      { type: 'pick', team: 'red', lane: 'roam', label: 'Roam', role: 'Support', step: 19, phase: 2 }
+      // Pick Phase 2 (4 picks: red-blue-blue-red) - lanes will be determined by user assignments
+      { type: 'pick', team: 'red', step: 16, phase: 2, slotIndex: 3 },
+      { type: 'pick', team: 'blue', step: 17, phase: 2, slotIndex: 3 },
+      { type: 'pick', team: 'blue', step: 18, phase: 2, slotIndex: 4 },
+      { type: 'pick', team: 'red', step: 19, phase: 2, slotIndex: 4 }
     ];
     
     setDraftSteps(completeDraftSteps);
     setCurrentStep(0);
     setDraftFinished(false);
-    setDraftPicks({ blue: [], red: [] });
-    setDraftBans({ blue: [], red: [] });
+    
+    // Initialize lane assignments
+    const initialLaneAssignments = {
+      blue: [null, null, null, null, null], // Start with no lanes assigned
+      red: [null, null, null, null, null]
+    };
+    setLaneAssignments(initialLaneAssignments);
+    
+    // If editing, populate the draft with existing data
+    if (isEditing) {
+      // Populate bans from existing data
+      const existingBans = {
+        blue: [
+          ...(banning.blue1 || []),
+          ...(banning.blue2 || [])
+        ],
+        red: [
+          ...(banning.red1 || []),
+          ...(banning.red2 || [])
+        ]
+      };
+      
+      // Populate picks from existing data
+      const existingPicks = {
+        blue: [
+          ...(picks.blue?.[1] || []),
+          ...(picks.blue?.[2] || [])
+        ],
+        red: [
+          ...(picks.red?.[1] || []),
+          ...(picks.red?.[2] || [])
+        ]
+      };
+      
+
+      
+      // Convert hero names to hero objects for the draft
+      const populateBans = (teamBans) => {
+        return teamBans.map(heroName => {
+          const hero = heroList.find(h => h.name === heroName);
+          return hero || { name: heroName, role: 'Unknown' };
+        });
+      };
+      
+             const populatePicks = (teamPicks) => {
+         return teamPicks.map((pick, index) => {
+           const heroName = typeof pick === 'string' ? pick : pick.hero;
+           const hero = heroList.find(h => h.name === heroName);
+           
+           // Determine lane based on pick phase and index
+           let lane = pick.lane;
+           if (!lane) {
+             // If no lane info, determine based on pick phase and position
+             if (index < 3) {
+               // Phase 1 picks: exp, jungler, mid
+               const phase1Lanes = ['exp', 'jungler', 'mid'];
+               lane = phase1Lanes[index] || 'unknown';
+             } else {
+               // Phase 2 picks: gold, roam
+               const phase2Lanes = ['gold', 'roam'];
+               lane = phase2Lanes[index - 3] || 'unknown';
+             }
+           }
+           
+           return {
+             ...hero,
+             lane: lane
+           };
+         });
+       };
+      
+      const populatedBans = {
+        blue: populateBans(existingBans.blue),
+        red: populateBans(existingBans.red)
+      };
+      
+      const populatedPicks = {
+        blue: populatePicks(existingPicks.blue),
+        red: populatePicks(existingPicks.red)
+      };
+      
+      setDraftBans(populatedBans);
+      setDraftPicks(populatedPicks);
+      
+      // Populate lane assignments from existing picks
+      const populateLaneAssignments = () => {
+        const blueLanes = [null, null, null, null, null];
+        const redLanes = [null, null, null, null, null];
+        
+        // Extract lanes from existing picks
+        if (existingPicks.blue) {
+          existingPicks.blue.forEach((pick, phaseIndex) => {
+            if (Array.isArray(pick)) {
+              pick.forEach((heroPick, pickIndex) => {
+                const slotIndex = phaseIndex === 0 ? pickIndex : pickIndex + 3; // Phase 1: 0-2, Phase 2: 3-4
+                if (heroPick && heroPick.lane && slotIndex < 5) {
+                  blueLanes[slotIndex] = heroPick.lane;
+                }
+              });
+            }
+          });
+        }
+        
+        if (existingPicks.red) {
+          existingPicks.red.forEach((pick, phaseIndex) => {
+            if (Array.isArray(pick)) {
+              pick.forEach((heroPick, pickIndex) => {
+                const slotIndex = phaseIndex === 0 ? pickIndex : pickIndex + 3; // Phase 1: 0-2, Phase 2: 3-4
+                if (heroPick && heroPick.lane && slotIndex < 5) {
+                  redLanes[slotIndex] = heroPick.lane;
+                }
+              });
+            }
+          });
+        }
+        
+        setLaneAssignments({
+          blue: blueLanes,
+          red: redLanes
+        });
+      };
+      
+      populateLaneAssignments();
+      
+      // Mark draft as finished since we have existing data
+      setDraftFinished(true);
+    } else {
+      // For new matches, start with empty draft
+      setDraftPicks({ blue: [], red: [] });
+      setDraftBans({ blue: [], red: [] });
+    }
+    
     setShowDraft(true);
   };
 
@@ -146,16 +283,39 @@ export default function ExportModal({
       });
     } else if (currentDraftStep.type === 'pick') {
       // Handle pick selection - store the complete hero object directly (like bans)
-      // Add lane information to the hero object
+      // Use the slotIndex from the draft step to determine which slot this pick goes into
+      const slotIndex = currentDraftStep.slotIndex;
+      
+      // Use the custom lane assignment for this slot if available
+      const actualLane = laneAssignments[currentDraftStep.team][slotIndex];
+      
+      if (!actualLane) {
+        // If no lane is assigned yet, show an alert and don't proceed
+        alert('Please assign a lane to this slot before selecting a hero.');
+        return;
+      }
+      
       const heroWithLane = {
         ...hero,
-        lane: currentDraftStep.lane
+        lane: actualLane
       };
 
       setDraftPicks(prev => ({
         ...prev,
         [currentDraftStep.team]: [...prev[currentDraftStep.team], heroWithLane]
       }));
+      
+      // Also update the lane assignments to reflect this selection
+      setLaneAssignments(prev => {
+        const teamLanes = [...prev[currentDraftStep.team]];
+        if (slotIndex !== -1) {
+          teamLanes[slotIndex] = actualLane;
+        }
+        return {
+          ...prev,
+          [currentDraftStep.team]: teamLanes
+        };
+      });
     }
 
     // Move to next step
@@ -200,44 +360,80 @@ export default function ExportModal({
     }
   };
 
-  // Handle draft completion
+    // Handle draft completion
   const handleDraftComplete = () => {
+    console.log('Draft completion - Current draft data:', { draftBans, draftPicks, laneAssignments });
+    
     // Update the banning state - extract hero names from hero objects
     // Distribute bans: 3 in phase 1, 2 in phase 2 for each team
-    const blueBans = draftBans.blue.map(hero => hero.name);
-    const redBans = draftBans.red.map(hero => hero.name);
+    const blueBans = draftBans.blue.filter(hero => hero && hero.name).map(hero => hero.name);
+    const redBans = draftBans.red.filter(hero => hero && hero.name).map(hero => hero.name);
     
-    setBanning({
+    console.log('Processed bans:', { blueBans, redBans });
+    
+    const newBanning = {
       blue1: blueBans.slice(0, 3), // First 3 bans for phase 1
       blue2: blueBans.slice(3, 5), // Last 2 bans for phase 2
       red1: redBans.slice(0, 3),   // First 3 bans for phase 1
       red2: redBans.slice(3, 5)    // Last 2 bans for phase 2
-    });
+    };
+    
+    setBanning(newBanning);
 
-    // Update the picks state - extract hero names and lane info from hero objects
-    const bluePicks = draftPicks.blue.map(hero => ({
+    // Update the picks state - merge hero picks with lane assignments
+    const bluePicks = draftPicks.blue.filter(hero => hero && hero.name).map((hero, index) => ({
       hero: hero.name,
-      lane: hero.lane,
+      lane: laneAssignments.blue[index] || hero.lane || null, // Use lane assignment if available
       role: hero.role
     }));
-    const redPicks = draftPicks.red.map(hero => ({
+    const redPicks = draftPicks.red.filter(hero => hero && hero.name).map((hero, index) => ({
       hero: hero.name,
-      lane: hero.lane,
+      lane: laneAssignments.red[index] || hero.lane || null, // Use lane assignment if available
       role: hero.role
     }));
 
-    setPicks({
+    console.log('Processed picks with lanes:', { bluePicks, redPicks });
+
+    const newPicks = {
       blue: {
         1: bluePicks.slice(0, 3), // First 3 picks for phase 1
         2: bluePicks.slice(3, 5)  // Last 2 picks for phase 2
-      },
+       },
       red: {
         1: redPicks.slice(0, 3), // First 3 picks for phase 1
         2: redPicks.slice(3, 5)  // Last 2 picks for phase 2
-      }
-    });
+       }
+    };
+    
+    setPicks(newPicks);
 
     setShowDraft(false);
+  };
+
+  // Handle confirm with draft sync for editing
+  const handleConfirmWithSync = () => {
+    // Use current form state instead of draft state for editing
+    // This ensures we always have the data even if user didn't click "Edit Draft"
+    const finalBanning = {
+      blue1: banning.blue1 || [],
+      blue2: banning.blue2 || [],
+      red1:  banning.red1  || [],
+      red2:  banning.red2  || [],
+    };
+
+    const finalPicks = {
+      blue: { 
+        1: picks.blue?.[1] || [], 
+        2: picks.blue?.[2] || [] 
+      },
+      red: { 
+        1: picks.red?.[1] || [], 
+        2: picks.red?.[2] || [] 
+      },
+    };
+
+    // Call parent with computed payload (do NOT rely on setState finishing)
+    onConfirm({ banning: finalBanning, picks: finalPicks });
   };
 
   // Check if current slot is active
@@ -262,12 +458,10 @@ export default function ExportModal({
       return slotIndex === nextAvailableSlot;
     }
     
-    // For pick slots, use the lane order
+    // For pick slots, use the slotIndex from the draft step
     if (slotType === 'pick') {
-      const laneOrder = ['exp', 'jungler', 'mid', 'gold', 'roam'];
-      const currentLane = currentDraftStep.lane;
-      const laneIndex = laneOrder.indexOf(currentLane);
-      return slotIndex === laneIndex;
+      const currentDraftStep = draftSteps[currentStep];
+      return currentDraftStep.slotIndex === slotIndex;
     }
     
     return false;
@@ -318,6 +512,16 @@ export default function ExportModal({
     setSelectedDraftSlot(null);
   };
 
+  // Add lane assignment handler
+  const handleLaneAssignment = (team, slotIndex, lane) => {
+    setLaneAssignments(prev => ({
+      ...prev,
+      [team]: prev[team].map((currentLane, idx) => 
+        idx === slotIndex ? lane : currentLane
+      )
+    }));
+  };
+
   // Get all banned and picked heroes for filtering
   const getAllBannedAndPickedHeroes = () => {
     const bannedHeroes = [];
@@ -364,26 +568,35 @@ export default function ExportModal({
             aria-hidden="true"
             id="modal-focus-trap"
           />
-          <h2 className="text-2xl font-bold text-white mb-6">Data Draft Input</h2>
+          <h2 className="text-2xl font-bold text-white mb-6">
+            {isEditing ? 'Edit Match Data' : 'Data Draft Input'}
+          </h2>
           
           {/* Comprehensive Draft Button */}
           <div className="mb-6 p-4 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg">
             <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-white text-lg font-bold">Complete Draft</h3>
-                <p className="text-blue-100 text-sm">Handle all bans and picks for both teams in one session</p>
-                <p className="text-blue-200 text-xs mt-1">
-                  Draft Order: Ban Phase 1 (6 bans) → Pick Phase 1 (6 picks) → Ban Phase 2 (4 bans) → Pick Phase 2 (4 picks)
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleComprehensiveDraft}
-                className="flex items-center gap-3 px-6 py-3 bg-white text-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-semibold"
-              >
-                <FaPlay className="w-5 h-5" />
-                Enter Complete Draft
-              </button>
+                             <div>
+                 <h3 className="text-white text-lg font-bold">
+                   {isEditing ? 'Edit Draft' : 'Complete Draft'}
+                 </h3>
+                 <p className="text-blue-100 text-sm">
+                   {isEditing 
+                     ? 'Review and modify existing bans and picks for both teams'
+                     : 'Handle all bans and picks for both teams in one session'
+                   }
+                 </p>
+                 <p className="text-blue-200 text-xs mt-1">
+                   Draft Order: Ban Phase 1 (6 bans) → Pick Phase 1 (6 picks) → Ban Phase 2 (4 bans) → Pick Phase 2 (4 picks)
+                 </p>
+               </div>
+                             <button
+                 type="button"
+                 onClick={handleComprehensiveDraft}
+                 className="flex items-center gap-3 px-6 py-3 bg-white text-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-semibold"
+               >
+                 <FaPlay className="w-5 h-5" />
+                 {isEditing ? 'Edit Draft' : 'Enter Complete Draft'}
+               </button>
             </div>
           </div>
 
@@ -623,10 +836,10 @@ export default function ExportModal({
               </button>
               <button
                 type="button"
-                onClick={onConfirm}
+                onClick={handleConfirmWithSync}
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
-                Export Match
+                {isEditing ? 'Update Match' : 'Export Match'}
               </button>
             </div>
           </form>
@@ -638,14 +851,19 @@ export default function ExportModal({
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-90">
           <div className="w-full h-full flex items-center justify-center">
             <div className="relative w-full h-full flex flex-col">
-              {/* Header */}
-              <div className="flex justify-between items-center p-6 bg-[#23232a] border-b border-gray-700">
-                <div>
-                  <h3 className="text-white text-2xl font-bold">Complete Draft</h3>
-                  <p className="text-gray-400 text-sm">
-                    Draft all bans and picks for both teams
-                  </p>
-                </div>
+                             {/* Header */}
+               <div className="flex justify-between items-center p-6 bg-[#23232a] border-b border-gray-700">
+                 <div>
+                   <h3 className="text-white text-2xl font-bold">
+                     {isEditing ? 'Edit Match Draft' : 'Complete Draft'}
+                   </h3>
+                   <p className="text-gray-400 text-sm">
+                     {isEditing 
+                       ? 'Review and modify existing bans and picks for both teams'
+                       : 'Draft all bans and picks for both teams'
+                     }
+                   </p>
+                 </div>
                 <div className="flex gap-3">
                   {/* Skip Ban Button - only show during banning phase */}
                   {!draftFinished && draftSteps[currentStep]?.type === 'ban' && (
@@ -661,7 +879,7 @@ export default function ExportModal({
                     disabled={!draftFinished}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-green-700 transition-colors"
                   >
-                    Complete Draft
+                    {isEditing ? 'Save Changes' : 'Complete Draft'}
                   </button>
                   <button 
                     onClick={() => setShowDraft(false)}
@@ -692,6 +910,8 @@ export default function ExportModal({
                   handleDraftSlotClick={handleDraftSlotClick}
                   handleDraftSlotEdit={handleDraftSlotEdit}
                   isCompleteDraft={true}
+                  customLaneAssignments={laneAssignments}
+                  onLaneReassign={handleLaneAssignment}
                 />
               </div>
             </div>

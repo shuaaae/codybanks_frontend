@@ -33,6 +33,12 @@ export default function MockDraft() {
   // User avatar state
   const [currentUser, setCurrentUser] = useState(null);
   const [showProfileModal, setShowProfileModal] = useState(false); // Add profile modal state
+  
+  // Custom lane assignments for pick slots - start with null (unassigned)
+  const [customLaneAssignments, setCustomLaneAssignments] = useState({
+    blue: [null, null, null, null, null], // Start unassigned
+    red: [null, null, null, null, null]   // Start unassigned
+  });
 
   // User session timeout: 30 minutes
   useSessionTimeout(30, 'currentUser', '/');
@@ -128,7 +134,34 @@ export default function MockDraft() {
     setBans({ blue: Array(5).fill(null), red: Array(5).fill(null) });
     setPicks({ blue: Array(5).fill(null), red: Array(5).fill(null) });
     setDraftFinished(false); // Reset draft finished state
+    // Reset lane assignments to unassigned
+    setCustomLaneAssignments({
+      blue: [null, null, null, null, null],
+      red: [null, null, null, null, null]
+    });
   }
+  
+  // Handle lane reassignment
+  function handleLaneReassign(team, slotIndex, newLane) {
+    console.log('MockDraft: handleLaneReassign called with:', { team, slotIndex, newLane });
+    setCustomLaneAssignments(prev => {
+      console.log('MockDraft: Previous assignments:', prev);
+      const newAssignments = { ...prev };
+      newAssignments[team] = [...newAssignments[team]];
+      newAssignments[team][slotIndex] = newLane;
+      console.log('MockDraft: New assignments:', newAssignments);
+      return newAssignments;
+    });
+  }
+  
+  // Check if any lanes have been assigned
+  const isLaneOrderModified = () => {
+    const unassignedState = [null, null, null, null, null];
+    return (
+      JSON.stringify(customLaneAssignments.blue) !== JSON.stringify(unassignedState) ||
+      JSON.stringify(customLaneAssignments.red) !== JSON.stringify(unassignedState)
+    );
+  };
 
   // Start draft
   function handleStartDraft() {
@@ -275,6 +308,8 @@ export default function MockDraft() {
             setSearchTerm={setSearchTerm}
             handleHeroSelect={handleHeroSelect}
             isActiveSlot={isActiveSlot}
+            customLaneAssignments={customLaneAssignments}
+            onLaneReassign={handleLaneReassign}
           />
           <DraftControls
             timerActive={timerActive}
@@ -288,6 +323,7 @@ export default function MockDraft() {
             handleResetDraft={handleResetDraft}
             handleSaveDraft={handleSaveDraft}
             isSavingDraft={isSavingDraft}
+            isLaneOrderModified={isLaneOrderModified()}
           />
         </div>
       </div>

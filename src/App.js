@@ -110,14 +110,21 @@ export const getMatchesData = async (teamId = null) => {
 
   try {
     const url = teamId ? `/public/api/matches?team_id=${teamId}` : '/public/api/matches';
-    const response = await fetch(url, {
-      headers: {
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'Accept': 'application/json',
-        'Accept-Encoding': 'gzip, deflate, br'
-      }
-    });
+    
+    // Prepare headers with team ID for backend compatibility
+    const headers = {
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip, deflate, br'
+    };
+    
+    // Add team ID header if available
+    if (teamId) {
+      headers['X-Active-Team-ID'] = teamId;
+    }
+    
+    const response = await fetch(url, { headers });
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);

@@ -4,6 +4,7 @@ import DraftSlots from './DraftSlots';
 import TeamNameInputs from './TeamNameInputs';
 import DraftTimer from './DraftTimer';
 import HeroGrid from './HeroGrid';
+import LoadingScreen from '../../screens/loadingScreen';
 
 export default function DraftBoard({
   currentStep,
@@ -27,8 +28,15 @@ export default function DraftBoard({
   handleHeroRemove,
   handleDraftSlotClick,
   handleDraftSlotEdit,
-  isCompleteDraft = false
+  isCompleteDraft = false,
+  customLaneAssignments,
+  onLaneReassign
 }) {
+  // Show loading screen when heroes are still loading
+  if (heroLoading) {
+    return <LoadingScreen />;
+  }
+
   return (
     <div className="draft-screenshot-area">
       <div className="draft-container flex flex-col items-center justify-center">
@@ -65,6 +73,8 @@ export default function DraftBoard({
                     handleDraftSlotClick={handleDraftSlotClick}
                     handleDraftSlotEdit={handleDraftSlotEdit}
                     isCompleteDraft={isCompleteDraft}
+                    customLaneAssignments={customLaneAssignments}
+                    onLaneReassign={onLaneReassign}
                   />
                 </div>
               </div>
@@ -103,6 +113,8 @@ export default function DraftBoard({
                     handleDraftSlotClick={handleDraftSlotClick}
                     handleDraftSlotEdit={handleDraftSlotEdit}
                     isCompleteDraft={isCompleteDraft}
+                    customLaneAssignments={customLaneAssignments}
+                    onLaneReassign={onLaneReassign}
                   />
                 </div>
               </div>
@@ -120,6 +132,8 @@ export default function DraftBoard({
               handleDraftSlotClick={handleDraftSlotClick}
               handleDraftSlotEdit={handleDraftSlotEdit}
               isCompleteDraft={isCompleteDraft}
+              customLaneAssignments={customLaneAssignments}
+              onLaneReassign={onLaneReassign}
             />
           </div>
           {/* Red side pick slots (right) */}
@@ -134,6 +148,8 @@ export default function DraftBoard({
               handleDraftSlotClick={handleDraftSlotClick}
               handleDraftSlotEdit={handleDraftSlotEdit}
               isCompleteDraft={isCompleteDraft}
+              customLaneAssignments={customLaneAssignments}
+              onLaneReassign={onLaneReassign}
             />
           </div>
           {/* Inner Panel */}

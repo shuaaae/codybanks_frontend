@@ -65,7 +65,7 @@ export default function HeroPickerModal({
     }
   };
   
-  const canConfirm = localSelected.length === maxSelect;
+  const canConfirm = heroPickerMode === 'ban' ? localSelected.length >= 0 : localSelected.length === maxSelect;
   let filteredHeroes = heroList;
   
   // Apply role filter - prioritize user selection over filterType
