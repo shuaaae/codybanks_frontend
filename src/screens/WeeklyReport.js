@@ -99,6 +99,40 @@ export default function WeeklyReport() {
     setShowSessionTimeoutModal(true);
   });
 
+  // Automatically set team as active when entering WeeklyReport
+  useEffect(() => {
+    const latestTeam = localStorage.getItem('latestTeam');
+    if (latestTeam) {
+      const teamData = JSON.parse(latestTeam);
+      // Set this team as active when entering the page
+      fetch('/api/teams/set-active', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ team_id: teamData.id }),
+      }).catch(error => {
+        console.error('Error setting team as active:', error);
+      });
+    }
+  }, []);
+
+  // Clear active team when leaving WeeklyReport
+  useEffect(() => {
+    return () => {
+      // Clear active team when component unmounts (user leaves the page)
+      fetch('/api/teams/set-active', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ team_id: null }),
+      }).catch(error => {
+        console.error('Error clearing active team:', error);
+      });
+    };
+  }, []);
+
   // Handle scroll for header visibility
   useEffect(() => {
     let lastScroll = 0;
@@ -137,6 +171,17 @@ export default function WeeklyReport() {
   }, [dateRange]);
 
   const handleLogout = () => {
+    // Clear active team when logging out
+    fetch('/api/teams/set-active', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ team_id: null }),
+    }).catch(error => {
+      console.error('Error clearing active team on logout:', error);
+    });
+
     localStorage.removeItem('currentUser');
     localStorage.removeItem('adminUser');
     localStorage.removeItem('adminAuthToken');
@@ -151,7 +196,7 @@ export default function WeeklyReport() {
   // Function to load notes from database
   const loadNotesFromDatabase = async () => {
     try {
-      const response = await fetch('/public/api/notes', {
+      const response = await fetch('/api/notes', {
         headers: {
           'Content-Type': 'application/json',
         },
@@ -176,7 +221,7 @@ export default function WeeklyReport() {
     }
 
     try {
-      const response = await fetch('/public/api/notes', {
+      const response = await fetch('/api/notes', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -212,7 +257,7 @@ export default function WeeklyReport() {
   // Function to delete a saved note
   const handleDeleteNote = async (noteId) => {
     try {
-      const response = await fetch(`/public/api/notes/${noteId}`, {
+      const response = await fetch(`/api/notes/${noteId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -282,7 +327,7 @@ export default function WeeklyReport() {
   useEffect(() => {
     if (!startDate || !endDate) return;
     setLoading(true);
-    fetch('/public/api/matches')
+            fetch('/api/matches')
       .then(res => res.json())
       .then(data => {
         console.log('All matches data:', data);

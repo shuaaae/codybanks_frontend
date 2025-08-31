@@ -6,9 +6,21 @@ import roamBg from '../../assets/roambg.jpg';
 import goldBg from '../../assets/goldbg.jpg';
 import jungleBg from '../../assets/junglebg.jpg';
 
-const PlayerCard = ({ lane, player, hero, highlight, onClick, getPlayerPhoto }) => {
+// CSS for pulse animation
+const pulseAnimation = `
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+`;
+
+const PlayerCard = ({ lane, player, hero, highlight, onClick, getPlayerPhoto, teamPlayers }) => {
   const [isHovered, setIsHovered] = useState(false);
-  const playerPhoto = getPlayerPhoto ? getPlayerPhoto(player.name) : (player.photo ? player.photo : defaultPlayer);
+  const playerPhoto = getPlayerPhoto ? getPlayerPhoto(player.name, player.role) : (player.photo ? player.photo : defaultPlayer);
   
   // Define role-specific colors and gradients
   const getRoleColors = (laneKey) => {
@@ -50,27 +62,44 @@ const PlayerCard = ({ lane, player, hero, highlight, onClick, getPlayerPhoto }) 
         glow: 'rgba(107, 114, 128, 0.3)'
       }
     };
+    
     return roleColors[laneKey] || roleColors.sub;
   };
+
+  // Check if this is a substitute player
+  const isSubstitute = lane.key === 'sub' || lane.isSubstitute || 
+                      (player.role && (
+                        player.role.toLowerCase().includes('sub') || 
+                        player.role.toLowerCase().includes('substitute') ||
+                        player.role.toLowerCase().includes('backup') ||
+                        player.role.toLowerCase().includes('reserve')
+                      ));
+
+  // Check if this is an extra player (like roam2, exp2)
+  const isExtraPlayer = lane.isExtraPlayer || 
+                       (lane.key && lane.key.includes('2')) ||
+                       (lane.label && lane.label.includes('2'));
 
   const colors = getRoleColors(lane.key);
   
   return (
-    <button
-      type="button"
-      className="group relative flex items-center transition-all duration-500 overflow-hidden cursor-pointer focus:outline-none transform hover:scale-[1.03] hover:-translate-y-2"
-      style={{ 
-        width: '100%',
-        maxWidth: '580px',
-        height: '180px',
-        borderRadius: '20px',
-        border: 'none',
-        background: 'transparent'
-      }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={onClick}
-    >
+    <>
+      <style>{pulseAnimation}</style>
+      <button
+        type="button"
+        className="group relative flex items-center transition-all duration-500 overflow-hidden cursor-pointer focus:outline-none transform hover:scale-[1.03] hover:-translate-y-2"
+        style={{ 
+          width: '100%',
+          maxWidth: '580px',
+          height: '180px',
+          borderRadius: '20px',
+          border: 'none',
+          background: 'transparent'
+        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        onClick={onClick}
+      >
       {/* Glassmorphism Card Background */}
       <div 
         className="absolute inset-0 transition-all duration-500"
@@ -98,30 +127,31 @@ const PlayerCard = ({ lane, player, hero, highlight, onClick, getPlayerPhoto }) 
         }}
       />
 
-      {/* Role-specific Background Pattern */}
-      {(lane.key === 'exp' || lane.key === 'mid' || lane.key === 'roam' || lane.key === 'gold' || lane.key === 'jungler') && (
-        <div 
-          className="absolute inset-0 opacity-30 transition-all duration-500"
-          style={{
-            background: `
-              linear-gradient(135deg, 
-                ${colors.primary} 0%, 
-                ${colors.secondary} 100%
-              ),
-              url(${
-                lane.key === 'exp' ? expBg :
-                lane.key === 'mid' ? midBg :
-                lane.key === 'roam' ? roamBg :
-                lane.key === 'gold' ? goldBg :
-                jungleBg
-              }) center/cover
-            `,
-            backgroundBlendMode: 'overlay',
-            borderRadius: '20px',
-            filter: isHovered ? 'brightness(1.2) saturate(1.3)' : 'brightness(0.8)'
-          }}
-        />
-      )}
+             {/* Role-specific Background Pattern - All players get their role background */}
+       {(lane.key === 'exp' || lane.key === 'mid' || lane.key === 'roam' || lane.key === 'gold' || lane.key === 'jungler') && (
+         <div 
+           className="absolute inset-0 opacity-30 transition-all duration-500"
+           style={{
+             background: `
+               linear-gradient(135deg, 
+                 ${colors.primary} 0%, 
+                 ${colors.secondary} 100%
+               ),
+               url(${
+                 lane.key === 'exp' ? expBg :
+                 lane.key === 'mid' ? midBg :
+                 lane.key === 'roam' ? roamBg :
+                 lane.key === 'gold' ? goldBg :
+                 lane.key === 'jungler' ? jungleBg :
+                 defaultPlayer
+               }) center/cover
+             `,
+             backgroundBlendMode: 'overlay',
+             borderRadius: '20px',
+             filter: isHovered ? 'brightness(1.2) saturate(1.3)' : 'brightness(0.8)'
+           }}
+         />
+       )}
 
       {/* Animated Glow Ring */}
       {isHovered && (
@@ -206,18 +236,35 @@ const PlayerCard = ({ lane, player, hero, highlight, onClick, getPlayerPhoto }) 
           </div>
           
           {/* Role Label */}
-          <div 
-            className="text-xs font-bold tracking-widest uppercase text-center px-3 py-1 rounded-full transition-all duration-300"
-            style={{
-              background: isHovered 
-                ? `linear-gradient(90deg, ${colors.accent}20 0%, ${colors.accent}40 100%)`
-                : 'linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.2) 100%)',
-              color: isHovered ? colors.accent : 'rgba(255, 255, 255, 0.8)',
-              border: `1px solid ${isHovered ? colors.accent + '60' : 'rgba(255, 255, 255, 0.2)'}`,
-              textShadow: '0 1px 2px rgba(0, 0, 0, 0.8)'
-            }}
-          >
-            {lane.label}
+          <div className="flex flex-col items-center space-y-1">
+            <div 
+              className="text-xs font-bold tracking-widest uppercase text-center px-3 py-1 rounded-full transition-all duration-300"
+              style={{
+                background: isHovered 
+                  ? `linear-gradient(90deg, ${colors.accent}20 0%, ${colors.accent}40 100%)`
+                  : 'linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.2) 100%)',
+                color: isHovered ? colors.accent : 'rgba(255, 255, 255, 0.8)',
+                border: `1px solid ${isHovered ? colors.accent + '60' : 'rgba(255, 255, 255, 0.2)'}`,
+                textShadow: '0 1px 2px rgba(0, 0, 0, 0.8)'
+              }}
+            >
+              {lane.label}
+            </div>
+            
+            {/* Substitute Player Indicator - Only show for actual substitutes */}
+            {isSubstitute && (
+              <div 
+                className="text-xs font-semibold text-center px-2 py-1 rounded-full transition-all duration-300"
+                style={{
+                  background: 'rgba(156, 163, 175, 0.9)', // Gray
+                  color: '#000',
+                  border: '1px solid rgba(156, 163, 175, 0.8)',
+                  textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)'
+                }}
+              >
+                SUBSTITUTE
+              </div>
+            )}
           </div>
         </div>
 
@@ -270,6 +317,7 @@ const PlayerCard = ({ lane, player, hero, highlight, onClick, getPlayerPhoto }) 
         </div>
       )}
     </button>
+    </>
   );
 };
 

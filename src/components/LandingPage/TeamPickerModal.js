@@ -8,14 +8,15 @@ export default function TeamPickerModal({
   activeTeam,
   handleSelectTeam,
   handleDeleteTeam,
-  onAddNewTeam
+  onAddNewTeam,
+  isOpeningTeam = false
 }) {
   if (!showTeamPickerModal) return null;
 
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80 backdrop-blur-sm p-4"
-      onClick={() => setShowTeamPickerModal(false)}
+      onClick={() => !isOpeningTeam && setShowTeamPickerModal(false)}
     >
       <div 
         className="relative bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-3xl border border-gray-600 shadow-2xl w-[95vw] max-w-2xl max-h-[90vh] flex flex-col overflow-hidden"
@@ -26,9 +27,15 @@ export default function TeamPickerModal({
         
         {/* Close Button */}
         <button 
-          className="absolute top-6 right-6 text-gray-400 hover:text-white text-2xl font-bold transition-colors duration-200 z-50 cursor-pointer hover:scale-110 bg-gray-800/50 rounded-full w-8 h-8 flex items-center justify-center" 
-          onClick={() => setShowTeamPickerModal(false)}
+          className={`absolute top-6 right-6 text-2xl font-bold transition-colors duration-200 z-50 rounded-full w-8 h-8 flex items-center justify-center ${
+            isOpeningTeam
+              ? 'text-gray-500 cursor-not-allowed'
+              : 'text-gray-400 hover:text-white cursor-pointer hover:scale-110'
+          } bg-gray-800/50`}
+          onClick={() => !isOpeningTeam && setShowTeamPickerModal(false)}
           type="button"
+          disabled={isOpeningTeam}
+          title={isOpeningTeam ? 'Cannot close while opening team' : 'Close'}
         >
           ✕
         </button>
@@ -105,18 +112,26 @@ export default function TeamPickerModal({
                       <div className="flex items-center space-x-2">
                         <button
                           onClick={() => handleSelectTeam(team.id)}
+                          disabled={isOpeningTeam}
                           className={`px-6 py-2 rounded-xl font-semibold transition-all duration-200 hover:scale-105 ${
-                            isActive 
-                              ? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-lg' 
-                              : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg'
+                            isOpeningTeam
+                              ? 'bg-gray-500 cursor-not-allowed opacity-50'
+                              : isActive 
+                                ? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-lg' 
+                                : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg'
                           }`}
                         >
-                          {isActive ? 'Continue' : 'Select'}
+                          {isOpeningTeam ? 'Opening...' : (isActive ? 'Continue' : 'Select')}
                         </button>
                         <button
                           onClick={() => handleDeleteTeam(team)}
-                          className="p-2 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-all duration-200 hover:scale-105 shadow-lg"
-                          title="Delete team"
+                          disabled={isOpeningTeam}
+                          className={`p-2 rounded-lg transition-all duration-200 hover:scale-105 shadow-lg ${
+                            isOpeningTeam
+                              ? 'bg-gray-500 cursor-not-allowed opacity-50'
+                              : 'bg-red-500 hover:bg-red-600 text-white'
+                          }`}
+                          title={isOpeningTeam ? 'Cannot delete while opening team' : 'Delete team'}
                         >
                           🗑️
                         </button>
@@ -131,9 +146,14 @@ export default function TeamPickerModal({
               <p className="text-gray-300 mb-4">No teams found. Please create a new one.</p>
               <button
                 onClick={onAddNewTeam}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                disabled={isOpeningTeam}
+                className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
+                  isOpeningTeam
+                    ? 'bg-gray-500 cursor-not-allowed opacity-50'
+                    : 'bg-blue-500 hover:bg-blue-600 text-white'
+                }`}
               >
-                Create New Team
+                {isOpeningTeam ? 'Opening Team...' : 'Create New Team'}
               </button>
             </div>
           )}
@@ -142,10 +162,15 @@ export default function TeamPickerModal({
             <div className="mt-6 pt-4 border-t border-gray-600">
               <button
                 onClick={onAddNewTeam}
-                className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-6 py-4 rounded-2xl font-semibold transition-all duration-200 hover:scale-[1.01] shadow-lg flex items-center justify-center gap-3"
+                disabled={isOpeningTeam}
+                className={`w-full px-6 py-4 rounded-2xl font-semibold transition-all duration-200 hover:scale-[1.01] shadow-lg flex items-center justify-center gap-3 ${
+                  isOpeningTeam
+                    ? 'bg-gray-500 cursor-not-allowed opacity-50'
+                    : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white'
+                }`}
               >
                 <span className="text-xl">➕</span>
-                Add New Team
+                {isOpeningTeam ? 'Opening Team...' : 'Add New Team'}
               </button>
             </div>
           )}

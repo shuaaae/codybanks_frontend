@@ -59,7 +59,7 @@ export default function AdminDashboard() {
       const currentUser = JSON.parse(localStorage.getItem('adminUser'));
       const token = localStorage.getItem('adminAuthToken');
       
-      const response = await fetch('/public/api/admin/users', {
+      const response = await fetch('/api/admin/users', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -89,7 +89,7 @@ export default function AdminDashboard() {
 
     try {
       const token = localStorage.getItem('authToken');
-      const response = await fetch('/public/api/admin/users', {
+      const response = await fetch('/api/admin/users', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -121,7 +121,7 @@ export default function AdminDashboard() {
 
     try {
       const token = localStorage.getItem('authToken');
-      const response = await fetch(`/public/api/admin/users/${userId}`, {
+      const response = await fetch(`/api/admin/users/${userId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,

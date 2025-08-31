@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import mainBg from '../assets/mainbg.jpg';
 import aboutBg from '../assets/aboutbg.jpg';
 import PageTitle from '../components/PageTitle';
+import { safelyActivateTeam } from '../utils/teamUtils';
 import {
   Header,
   HeroSection,
@@ -10,7 +11,8 @@ import {
   TeamPickerModal,
   LoginModal,
   SignupModal,
-  DeleteConfirmModal
+  DeleteConfirmModal,
+  ErrorModal
 } from '../components/LandingPage';
 
 export default function LandingPage() {
@@ -30,11 +32,20 @@ export default function LandingPage() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loadingTeams, setLoadingTeams] = useState(false);
+  const [isCreatingTeam, setIsCreatingTeam] = useState(false);
+  const [teamNameError, setTeamNameError] = useState("");
+  const [isValidatingName, setIsValidatingName] = useState(false);
   const [teamLogo, setTeamLogo] = useState(null);
   const [teamLogoFile, setTeamLogoFile] = useState(null);
   const [teamName, setTeamName] = useState("");
   const [activeTeam, setActiveTeam] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isOpeningTeam, setIsOpeningTeam] = useState(false);
+  const [openingTeamName, setOpeningTeamName] = useState("");
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [errorTitle, setErrorTitle] = useState("Error");
+  const [showCleanupOption, setShowCleanupOption] = useState(false);
   const laneRoles = [
     { key: 'exp', label: 'Exp Lane' },
     { key: 'mid', label: 'Mid Lane' },
@@ -64,12 +75,98 @@ export default function LandingPage() {
     setPlayers(players.map((p, i) => i === idx ? { ...p, name: value } : p));
   };
 
+  // Handle team name change with validation
+  const handleTeamNameChange = async (e) => {
+    const newName = e.target.value;
+    setTeamName(newName);
+    setTeamNameError(""); // Clear error when user starts typing
+    
+    // Only check if name is not empty and has at least 2 characters
+    if (newName.trim().length >= 2) {
+      setIsValidatingName(true);
+      // Add a small delay to avoid too many API calls
+      setTimeout(async () => {
+        if (newName === teamName) { // Only check if name hasn't changed
+          const nameCheck = await checkTeamNameExists(newName);
+          if (nameCheck.exists) {
+            setTeamNameError(nameCheck.message);
+          }
+          setIsValidatingName(false);
+        }
+      }, 500);
+    } else {
+      setIsValidatingName(false);
+    }
+  };
+
+  // Normalize role values to ensure consistency
+  const normalizeRole = (role) => {
+    if (!role) return role;
+    
+    const normalizedRole = role.toLowerCase().trim();
+    
+    // Map various role formats to standard ones
+    const roleMap = {
+      // Standard roles
+      'exp': 'exp',
+      'mid': 'mid',
+      'jungler': 'jungler',
+      'gold': 'gold',
+      'roam': 'roam',
+      'sub': 'substitute',
+      'substitute': 'substitute',
+      
+      // Common variations
+      'explane': 'exp',
+      'explaner': 'exp',
+      'top': 'exp',
+      'top_laner': 'exp',
+      'toplaner': 'exp',
+      
+      'midlane': 'mid',
+      'mid_laner': 'mid',
+      'midlaner': 'mid',
+      'middle': 'mid',
+      
+      'jungle': 'jungler',
+      'jungler': 'jungler',
+      
+      'adc': 'gold',
+      'marksman': 'gold',
+      'gold_lane': 'gold',
+      'goldlane': 'gold',
+      'carry': 'gold',
+      
+      'support': 'roam',
+      'roamer': 'roam',
+      'roam_lane': 'roam',
+      'roamlane': 'roam',
+      
+      'backup': 'substitute',
+      'reserve': 'substitute',
+      'sub': 'substitute'
+    };
+    
+    return roleMap[normalizedRole] || normalizedRole;
+  };
+
   const handleAddPlayer = () => {
-    setPlayers([...players, { role: "", name: "" }]);
+    // Add a new player with a default role (first available role that's not taken)
+    const usedRoles = players.map(p => p.role).filter(role => role.trim() !== '');
+    const availableRoles = defaultRoles.filter(role => !usedRoles.includes(role));
+    const defaultRole = availableRoles.length > 0 ? availableRoles[0] : 'sub';
+    
+    setPlayers([...players, { role: defaultRole, name: "" }]);
   };
 
   const handleRoleChange = (idx, value) => {
-    setPlayers(players.map((p, i) => i === idx ? { ...p, role: value } : p));
+    // Don't allow empty roles
+    if (!value.trim()) return;
+    
+    // Normalize the role value
+    const normalizedRole = normalizeRole(value);
+    
+    setPlayers(players.map((p, i) => i === idx ? { ...p, role: normalizedRole } : p));
   };
 
   const handleRemovePlayer = (idx) => {
@@ -77,12 +174,30 @@ export default function LandingPage() {
   };
 
   const handleLogout = () => {
+    // Clear active team when logging out
+    fetch('/api/teams/set-active', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ team_id: null }),
+    }).catch(error => {
+      console.error('Error clearing active team on logout:', error);
+    });
+    
     localStorage.removeItem('currentUser');
     localStorage.removeItem('adminUser');
     localStorage.removeItem('adminAuthToken');
     setIsLoggedIn(false);
     setActiveTeam(null);
     localStorage.removeItem('latestTeam');
+    
+    // Trigger cross-tab synchronization for clearing active team
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'latestTeam',
+      newValue: null,
+      oldValue: null
+    }));
   };
 
   const handleCloseLoginModal = () => {
@@ -104,7 +219,7 @@ export default function LandingPage() {
 
     try {
       console.log('Attempting login with:', { email: loginEmail });
-      const response = await fetch('/public/api/auth/login', {
+              const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -193,11 +308,39 @@ export default function LandingPage() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
+  // Cross-tab synchronization for active team
+  useEffect(() => {
+    const handleActiveTeamChange = () => {
+      const latestTeam = localStorage.getItem('latestTeam');
+      if (latestTeam) {
+        try {
+          const teamData = JSON.parse(latestTeam);
+          setActiveTeam(teamData);
+        } catch (error) {
+          console.error('Error parsing latestTeam from localStorage:', error);
+        }
+      } else {
+        setActiveTeam(null);
+      }
+    };
+
+    // Listen for changes in other tabs
+    window.addEventListener('storage', handleActiveTeamChange);
+    
+    // Also check localStorage periodically for changes within the same tab
+    const interval = setInterval(handleActiveTeamChange, 1000);
+    
+    return () => {
+      window.removeEventListener('storage', handleActiveTeamChange);
+      clearInterval(interval);
+    };
+  }, []);
+
   // Test API connection (only log errors)
   useEffect(() => {
     const testApiConnection = async () => {
       try {
-        const response = await fetch('/public/api/test');
+        const response = await fetch('/api/test');
         if (!response.ok) {
           console.error('API connection failed:', response.status);
         }
@@ -213,7 +356,7 @@ export default function LandingPage() {
   useEffect(() => {
     const loadActiveTeam = async () => {
       try {
-        const response = await fetch('/public/api/teams/active');
+        const response = await fetch('/api/teams/active');
         if (response.ok) {
           const activeTeamData = await response.json();
           setActiveTeam(activeTeamData);
@@ -237,7 +380,7 @@ export default function LandingPage() {
     const fetchTeams = async () => {
       setLoadingTeams(true);
       try {
-        const response = await fetch('/public/api/teams');
+        const response = await fetch('/api/teams');
         if (response.ok) {
           const teamsData = await response.json();
           setTeams(teamsData);
@@ -250,9 +393,34 @@ export default function LandingPage() {
     };
 
     loadActiveTeam();
-    fetchTeams();
+        fetchTeams();
   }, []);
 
+  // Clear active team when entering LandingPage (user is no longer in a team)
+  useEffect(() => {
+    // Clear active team when user returns to landing page
+    fetch('/api/teams/set-active', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ team_id: null }),
+    }).catch(error => {
+      console.error('Error clearing active team:', error);
+    });
+    
+    // Also clear local state and trigger cross-tab synchronization
+    setActiveTeam(null);
+    localStorage.removeItem('latestTeam');
+    
+    // Trigger cross-tab synchronization for clearing active team
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'latestTeam',
+      newValue: null,
+      oldValue: null
+    }));
+  }, []);
+  
   // const handleContinueWithCurrentTeam = () => {} // removed (unused)
 
   const handleSwitchOrAddTeam = () => {
@@ -269,40 +437,156 @@ export default function LandingPage() {
   };
 
   const handleSelectTeam = async (teamId) => {
+    console.log('handleSelectTeam called with teamId:', teamId);
+    
+    // Prevent multiple clicks
+    if (isOpeningTeam) return;
+    
     try {
-      const response = await fetch('/public/api/teams/set-active', {
+      const selectedTeam = teams.find(team => team.id === teamId);
+      console.log('Selected team:', selectedTeam);
+      
+      // Set loading state
+      setIsOpeningTeam(true);
+      setOpeningTeamName(selectedTeam.name);
+      
+      // First check if team is available
+      const availabilityResponse = await fetch('/api/teams/check-availability', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ team_id: teamId }),
       });
+      
+      if (!availabilityResponse.ok) {
+        const availabilityData = await availabilityResponse.json();
+        throw new Error(availabilityData.message || 'Team is not available');
+      }
+      
+      const availabilityData = await availabilityResponse.json();
+      if (!availabilityData.available) {
+        throw new Error(availabilityData.message || 'Team is not available');
+      }
+      
+      const teamData = {
+        teamName: selectedTeam.name,
+        players: selectedTeam.players_data || [],
+        id: selectedTeam.id
+      };
+      
+      console.log('Team data to store:', teamData);
+      
+      // Store team data in localStorage
+      localStorage.setItem('latestTeam', JSON.stringify(teamData));
+      setActiveTeam(teamData);
+      
+      // Trigger cross-tab synchronization
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'latestTeam',
+        newValue: JSON.stringify(teamData),
+        oldValue: null
+      }));
+      
+      console.log('About to activate team using safelyActivateTeam...');
+      
+      // Use the safelyActivateTeam function to handle session conflicts automatically
+      console.log('Calling safelyActivateTeam for team ID:', teamId);
+      
+      try {
+        const activationSuccess = await safelyActivateTeam(teamId);
+        console.log('safelyActivateTeam result:', activationSuccess);
 
-      if (response.ok) {
-        const selectedTeam = teams.find(team => team.id === teamId);
-        const teamData = {
-          teamName: selectedTeam.name,
-          players: selectedTeam.players_data || [],
-          id: selectedTeam.id
-        };
-        
-        localStorage.setItem('latestTeam', JSON.stringify(teamData));
-        setActiveTeam(teamData);
-        
-        setShowTeamPickerModal(false);
-        navigate('/home', { 
-          state: { 
+        if (activationSuccess) {
+          console.log('Team activated successfully, closing modal and navigating...');
+          setShowTeamPickerModal(false);
+          console.log('About to navigate to /home with state:', { 
             selectedTeam: selectedTeam.name,
             activeTeamData: teamData 
-          } 
-        });
+          });
+          navigate('/home', { 
+            state: { 
+              selectedTeam: selectedTeam.name,
+              activeTeamData: teamData 
+            } 
+          });
+          console.log('Navigation called');
+        } else {
+          console.error('Team activation failed');
+          throw new Error('Failed to activate team. Please try again.');
+        }
+      } catch (activationError) {
+        console.error('Error during team activation:', activationError);
+        throw new Error(`Team activation error: ${activationError.message}`);
       }
     } catch (error) {
-      console.error('Error setting active team:', error);
+      console.error('Error in handleSelectTeam:', error);
+      
+             // Show error message to user
+      if (error.message.includes('Team is currently being used by another user') || 
+          error.message.includes('Team is currently active by another session')) {
+        showError(`Cannot open team: ${error.message}`, "Team Unavailable", true);
+      } else if (error.message.includes('Failed to activate team')) {
+        showError(`Team activation failed. Please try again or refresh the page.`, "Activation Error");
+      } else {
+        showError(`Error opening team: ${error.message}`, "Error Opening Team");
+      }
+      
+      // Reset loading state on error
+      setIsOpeningTeam(false);
+      setOpeningTeamName("");
+    }
+  };
+
+  // Function to check if team name exists
+  const checkTeamNameExists = async (name) => {
+    if (!name || name.trim() === '') {
+      return { exists: false, message: 'Team name cannot be empty' };
+    }
+
+    try {
+      const response = await fetch('/api/teams/check-name', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        return result;
+      } else {
+        console.error('Error checking team name:', response.status);
+        return { exists: false, message: 'Error checking team name' };
+      }
+    } catch (error) {
+      console.error('Network error checking team name:', error);
+      return { exists: false, message: 'Network error checking team name' };
     }
   };
 
   const handleConfirm = async () => {
+    if (isCreatingTeam) return; // Prevent spam clicking
+    
+    // Clear any previous errors
+    setTeamNameError("");
+    
+    // Validate that all players have names and roles
+    const invalidPlayers = players.filter(player => !player.name.trim() || !player.role.trim());
+    if (invalidPlayers.length > 0) {
+      setTeamNameError("All players must have both a name and a role assigned.");
+      return;
+    }
+    
+    // Check if team name exists before proceeding
+    const nameCheck = await checkTeamNameExists(teamName);
+    if (nameCheck.exists) {
+      setTeamNameError(nameCheck.message);
+      return;
+    }
+    
+    setIsCreatingTeam(true);
     try {
       let logoPath = null;
       
@@ -311,7 +595,7 @@ export default function LandingPage() {
         const formData = new FormData();
         formData.append('logo', teamLogoFile);
         
-        const uploadResponse = await fetch('/public/api/teams/upload-logo', {
+        const uploadResponse = await fetch('/api/teams/upload-logo', {
           method: 'POST',
           body: formData,
         });
@@ -327,14 +611,22 @@ export default function LandingPage() {
         console.log('No logo file to upload');
       }
       
-      const response = await fetch('/public/api/teams', {
+              // Normalize all player roles before sending to backend
+      const normalizedPlayers = players.map(player => ({
+        ...player,
+        role: normalizeRole(player.role)
+      }));
+      
+      console.log('Normalized players data:', normalizedPlayers);
+      
+      const response = await fetch('/api/teams', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           name: teamName,
-          players: players,
+          players: normalizedPlayers,
           logo_path: logoPath
         }),
       });
@@ -350,27 +642,32 @@ export default function LandingPage() {
         }
         
         try {
-          const setActiveResponse = await fetch('/public/api/teams/set-active', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ team_id: newTeam.id }),
-          });
+          // Use safelyActivateTeam for the new team
+          const activationSuccess = await safelyActivateTeam(newTeam.id);
           
-          if (setActiveResponse.ok) {
-            console.log('New team set as active:', newTeam.name);
+          if (activationSuccess) {
+            console.log('New team activated successfully:', newTeam.name);
+          } else {
+            console.warn('New team activation had issues, but proceeding');
           }
         } catch (error) {
-          console.error('Error setting new team as active:', error);
+          console.error('Error activating new team:', error);
+          // Continue anyway since the team was created successfully
         }
         
         const teamData = {
           teamName,
-          players,
+          players: normalizedPlayers,
           id: newTeam.id
         };
         localStorage.setItem('latestTeam', JSON.stringify(teamData));
+        
+        // Trigger cross-tab synchronization
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'latestTeam',
+          newValue: JSON.stringify(teamData),
+          oldValue: null
+        }));
         
         localStorage.removeItem('latestMatch');
         sessionStorage.clear();
@@ -387,6 +684,8 @@ export default function LandingPage() {
         setTeamLogo(null);
         setTeamLogoFile(null);
         setTeamName("");
+        setTeamNameError("");
+        setIsValidatingName(false);
         setPlayers([
           { role: "exp", name: "" },
           { role: "mid", name: "" },
@@ -397,6 +696,8 @@ export default function LandingPage() {
       }
     } catch (error) {
       console.error('Error creating team:', error);
+    } finally {
+      setIsCreatingTeam(false);
     }
   };
 
@@ -411,7 +712,7 @@ export default function LandingPage() {
     
     setIsDeletingTeam(true);
     try {
-      const response = await fetch(`/public/api/teams/${teamToDelete.id}`, {
+              const response = await fetch(`/api/teams/${teamToDelete.id}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -425,6 +726,14 @@ export default function LandingPage() {
         // If this was the active team, clear it
         if (activeTeam && activeTeam.id === teamToDelete.id) {
           setActiveTeam(null);
+          localStorage.removeItem('latestTeam');
+          
+          // Trigger cross-tab synchronization for clearing active team
+          window.dispatchEvent(new StorageEvent('storage', {
+            key: 'latestTeam',
+            newValue: null,
+            oldValue: null
+          }));
         }
         
         // Close the modal
@@ -445,6 +754,40 @@ export default function LandingPage() {
     setTeamToDelete(null);
   };
 
+  const showError = (message, title = "Error", showCleanupOption = false) => {
+    setErrorMessage(message);
+    setErrorTitle(title);
+    setShowCleanupOption(showCleanupOption);
+    setShowErrorModal(true);
+  };
+
+  const hideError = () => {
+    setShowErrorModal(false);
+    setErrorMessage("");
+    setErrorTitle("Error");
+  };
+
+  // Force cleanup all active sessions (useful when teams get stuck)
+  const forceCleanupSessions = async () => {
+    try {
+      const response = await fetch('/api/teams/force-cleanup-sessions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Sessions cleaned up:', result);
+        // Refresh teams list after cleanup
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error('Error cleaning up sessions:', error);
+    }
+  };
+
   const handleAddTeam = () => {
                 if (!isLoggedIn) {
                   setShowLoginModal(true);
@@ -458,9 +801,26 @@ export default function LandingPage() {
     setShowLoginModal(true);
   };
 
-  const onAddNewTeam = () => {
-                      setShowTeamPickerModal(false);
-                      setShowAddTeamModal(true);
+    const onAddNewTeam = () => {
+                       setShowTeamPickerModal(false);
+                       setShowAddTeamModal(true);
+   };
+
+  // Handle closing the add team modal
+  const handleCloseAddTeamModal = () => {
+    setShowAddTeamModal(false);
+    setTeamNameError("");
+    setIsValidatingName(false);
+    setTeamLogo(null);
+    setTeamLogoFile(null);
+    setTeamName("");
+    setPlayers([
+      { role: "exp", name: "" },
+      { role: "mid", name: "" },
+      { role: "jungler", name: "" },
+      { role: "gold", name: "" },
+      { role: "roam", name: "" },
+    ]);
   };
 
   return (
@@ -582,18 +942,23 @@ export default function LandingPage() {
       <AddTeamModal
         showAddTeamModal={showAddTeamModal}
         setShowAddTeamModal={setShowAddTeamModal}
+        onClose={handleCloseAddTeamModal}
         teamLogo={teamLogo}
         teamName={teamName}
         setTeamName={setTeamName}
+        teamNameError={teamNameError}
+        isValidatingName={isValidatingName}
         players={players}
         laneRoles={laneRoles}
         defaultRoles={defaultRoles}
         handleLogoChange={handleLogoChange}
         handlePlayerChange={handlePlayerChange}
+        handleTeamNameChange={handleTeamNameChange}
         handleAddPlayer={handleAddPlayer}
         handleRoleChange={handleRoleChange}
         handleRemovePlayer={handleRemovePlayer}
         handleConfirm={handleConfirm}
+        isCreatingTeam={isCreatingTeam}
       />
 
       <TeamPickerModal
@@ -605,6 +970,7 @@ export default function LandingPage() {
         handleSelectTeam={handleSelectTeam}
         handleDeleteTeam={handleDeleteTeam}
         onAddNewTeam={onAddNewTeam}
+        isOpeningTeam={isOpeningTeam}
       />
 
       <LoginModal
@@ -634,6 +1000,28 @@ export default function LandingPage() {
         handleConfirmDelete={handleConfirmDelete}
         handleCancelDelete={handleCancelDelete}
       />
+
+      {/* Team Opening Loading Modal */}
+      {isOpeningTeam && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-90" style={{ pointerEvents: 'auto' }}>
+          <div className="bg-[#23232a] rounded-2xl shadow-2xl p-8 min-w-[340px] max-w-[90vw] flex flex-col items-center z-[10000]">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-400 mb-6"></div>
+            <div className="text-white text-xl font-bold mb-2">Opening Team</div>
+            <div className="text-gray-300 text-lg mb-4">{openingTeamName}</div>
+            <div className="text-gray-400 text-sm text-center">Please wait while we prepare your team...</div>
+          </div>
+        </div>
+      )}
+
+             {/* Error Modal */}
+       <ErrorModal
+         show={showErrorModal}
+         message={errorMessage}
+         title={errorTitle}
+         onClose={hideError}
+         showCleanupOption={showCleanupOption}
+         onCleanup={forceCleanupSessions}
+       />
 
       {/* Responsive Styles */}
       <style>{`

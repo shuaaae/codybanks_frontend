@@ -109,7 +109,7 @@ export default function DraftSlots({
               {hero ? (
                 <>
                   <img
-                    src={`/public/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
+                    src={`/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
                     alt={hero.name}
                     className="w-full h-full object-cover rounded-full"
                     draggable={false}

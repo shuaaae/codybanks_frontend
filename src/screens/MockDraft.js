@@ -53,7 +53,52 @@ export default function MockDraft() {
     setCurrentUser(user);
   }, [navigate]);
 
+  // Automatically set team as active when entering MockDraft
+  useEffect(() => {
+    const latestTeam = localStorage.getItem('latestTeam');
+    if (latestTeam) {
+      const teamData = JSON.parse(latestTeam);
+      // Set this team as active when entering the page
+      fetch('/api/teams/set-active', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ team_id: teamData.id }),
+      }).catch(error => {
+        console.error('Error setting team as active:', error);
+      });
+    }
+  }, []);
+
+  // Clear active team when leaving MockDraft
+  useEffect(() => {
+    return () => {
+      // Clear active team when component unmounts (user leaves the page)
+      fetch('/api/teams/set-active', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ team_id: null }),
+      }).catch(error => {
+        console.error('Error clearing active team:', error);
+      });
+    };
+  }, []);
+
   const handleLogout = () => {
+    // Clear active team when logging out
+    fetch('/api/teams/set-active', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ team_id: null }),
+    }).catch(error => {
+      console.error('Error clearing active team on logout:', error);
+    });
+
     localStorage.removeItem('currentUser');
     localStorage.removeItem('authToken');
     localStorage.removeItem('adminUser');
@@ -66,11 +111,17 @@ export default function MockDraft() {
     const loadHeroData = async () => {
       try {
         setHeroLoading(true);
+        console.log('Starting to load hero data...');
         const data = await getHeroData();
         console.log('Loaded heroes:', data);
+        console.log('Hero count:', data?.length || 0);
+        if (data && data.length > 0) {
+          console.log('First hero:', data[0]);
+        }
         setHeroList(data);
       } catch (error) {
         console.error('Error loading hero data:', error);
+        console.error('Error details:', error.message);
       } finally {
         setHeroLoading(false);
       }

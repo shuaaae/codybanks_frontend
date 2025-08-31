@@ -4,7 +4,8 @@ const ConfirmUploadModal = ({
   isOpen, 
   pendingPhoto, 
   onConfirm, 
-  onCancel 
+  onCancel,
+  isUploading = false
 }) => {
   if (!isOpen || !pendingPhoto) return null;
 
@@ -19,8 +20,31 @@ const ConfirmUploadModal = ({
           style={{ objectPosition: 'center' }}
         />
         <div className="flex gap-6">
-          <button className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold" onClick={onConfirm}>Confirm</button>
-          <button className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg font-semibold" onClick={onCancel}>Cancel</button>
+          <button 
+            className={`px-6 py-2 rounded-lg font-semibold transition-colors ${
+              isUploading 
+                ? 'bg-gray-500 cursor-not-allowed' 
+                : 'bg-green-600 hover:bg-green-700'
+            } text-white`} 
+            onClick={onConfirm}
+            disabled={isUploading}
+          >
+            {isUploading ? (
+              <div className="flex items-center gap-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                Uploading...
+              </div>
+            ) : (
+              'Confirm'
+            )}
+          </button>
+          <button 
+            className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg font-semibold" 
+            onClick={onCancel}
+            disabled={isUploading}
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>

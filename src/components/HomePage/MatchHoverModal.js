@@ -5,7 +5,7 @@ import hoverBg from '../../assets/hoverbg.jpg';
 const OptimizedHeroImage = React.memo(({ heroName, size = 40, isBan = false, className = "", heroMap }) => {
   const [imageError, setImageError] = React.useState(false);
   const hero = heroMap.get(heroName);
-  const imagePath = hero ? `/public/heroes/${hero.role?.trim().toLowerCase()}/${hero.image.replace('.png', '.webp')}` : null;
+  const imagePath = hero ? `/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}` : null;
   
   if (!hero || !imagePath) {
     return (
@@ -88,7 +88,7 @@ const OptimizedBanHeroIcon = React.memo(({ heroName, heroMap }) => {
   }
   
   const hero = heroMap.get(heroName);
-  const imagePath = hero ? `/public/heroes/${hero.role?.trim().toLowerCase()}/${hero.image.replace('.png', '.webp')}` : null;
+  const imagePath = hero ? `/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}` : null;
   
   if (!hero || !imagePath) {
     return (

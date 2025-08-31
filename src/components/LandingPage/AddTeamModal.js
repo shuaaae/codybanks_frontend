@@ -3,25 +3,30 @@ import React from 'react';
 export default function AddTeamModal({
   showAddTeamModal,
   setShowAddTeamModal,
+  onClose,
   teamLogo,
   teamName,
   setTeamName,
+  teamNameError,
+  isValidatingName,
   players,
   laneRoles,
   defaultRoles,
   handleLogoChange,
   handlePlayerChange,
+  handleTeamNameChange,
   handleAddPlayer,
   handleRoleChange,
   handleRemovePlayer,
-  handleConfirm
+  handleConfirm,
+  isCreatingTeam
 }) {
   if (!showAddTeamModal) return null;
 
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80 backdrop-blur-sm p-4"
-      onClick={() => setShowAddTeamModal(false)}
+      onClick={() => !isCreatingTeam && onClose()}
     >
       <div 
         className="relative bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-3xl border border-gray-600 shadow-2xl w-[95vw] max-w-2xl max-h-[90vh] flex flex-col overflow-hidden"
@@ -32,9 +37,14 @@ export default function AddTeamModal({
         
         {/* Close Button */}
         <button 
-          className="absolute top-6 right-6 text-gray-400 hover:text-white text-2xl font-bold transition-colors duration-200 z-50 cursor-pointer hover:scale-110 bg-gray-800/50 rounded-full w-8 h-8 flex items-center justify-center" 
-          onClick={() => setShowAddTeamModal(false)}
+          className={`absolute top-6 right-6 text-2xl font-bold transition-colors duration-200 z-50 rounded-full w-8 h-8 flex items-center justify-center ${
+            isCreatingTeam 
+              ? 'text-gray-600 cursor-not-allowed bg-gray-800/30' 
+              : 'text-gray-400 hover:text-white cursor-pointer hover:scale-110 bg-gray-800/50'
+          }`}
+          onClick={() => !isCreatingTeam && onClose()}
           type="button"
+          disabled={isCreatingTeam}
         >
           ✕
         </button>
@@ -60,20 +70,55 @@ export default function AddTeamModal({
                 </div>
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
-              <input id="team-logo-upload" type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
+              <input id="team-logo-upload" type="file" accept="image/*" className="hidden" onChange={handleLogoChange} disabled={isCreatingTeam} />
             </div>
           </label>
         </div>
         
         {/* Team Name Input */}
         <div className="relative z-10 w-full flex justify-center mb-4 px-6">
-                      <input
-              type="text"
-              className="w-full max-w-md bg-gray-800/80 backdrop-blur-sm border border-gray-600 rounded-2xl py-3 px-6 text-white text-center font-semibold text-lg outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 placeholder-gray-400 transition-all duration-200"
-              placeholder="Enter Team Name"
-              value={teamName}
-              onChange={e => setTeamName(e.target.value)}
-            />
+          <div className="w-full max-w-md">
+            <div className="relative">
+              <input
+                type="text"
+                className={`w-full backdrop-blur-sm border rounded-2xl py-3 px-6 text-center font-semibold text-lg outline-none transition-all duration-200 ${
+                  isCreatingTeam 
+                    ? 'bg-gray-700/60 border-gray-500 text-gray-400 cursor-not-allowed' 
+                    : teamNameError 
+                      ? 'bg-gray-800/80 border-red-500 text-white focus:ring-2 focus:ring-red-400 focus:border-red-400'
+                      : 'bg-gray-800/80 border-gray-600 text-white focus:ring-2 focus:ring-blue-400 focus:border-blue-400'
+                } placeholder-gray-400`}
+                placeholder="Enter Team Name"
+                value={teamName}
+                onChange={handleTeamNameChange}
+                disabled={isCreatingTeam}
+              />
+              {/* Validation indicator */}
+              {isValidatingName && teamName.trim().length >= 2 && (
+                <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-400 border-t-transparent"></div>
+                </div>
+              )}
+              {/* Success indicator */}
+              {!isValidatingName && !teamNameError && teamName.trim().length >= 2 && (
+                <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
+                  <svg className="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              )}
+            </div>
+            {teamNameError && (
+              <div className="mt-2 text-center">
+                <span className="text-red-400 text-sm font-medium flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  {teamNameError}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
         
         {/* Players Section */}
@@ -89,15 +134,25 @@ export default function AddTeamModal({
                 <div className="bg-gray-800/60 backdrop-blur-sm border border-gray-600 rounded-xl p-3 hover:border-blue-400/50 transition-all duration-200">
                   <input
                     type="text"
-                    className="w-full bg-gray-700/80 border border-gray-500 rounded-lg py-2 px-3 text-white text-center font-medium mb-2 outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 placeholder-gray-400 transition-all duration-200 text-sm"
+                    className={`w-full border rounded-lg py-2 px-3 text-center font-medium mb-2 outline-none transition-all duration-200 text-sm ${
+                      isCreatingTeam 
+                        ? 'bg-gray-600/60 border-gray-500 text-gray-400 cursor-not-allowed' 
+                        : 'bg-gray-700/80 border-gray-500 text-white focus:ring-2 focus:ring-blue-400 focus:border-blue-400'
+                    } placeholder-gray-400`}
                     placeholder="Player Name"
                     value={player.name}
                     onChange={e => handlePlayerChange(idx, e.target.value)}
+                    disabled={isCreatingTeam}
                   />
                   <select
-                    className="w-full bg-gray-700/80 border border-gray-500 rounded-lg py-2 px-3 text-gray-200 text-center text-xs outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200"
+                    className={`w-full border rounded-lg py-2 px-3 text-center text-xs outline-none transition-all duration-200 ${
+                      isCreatingTeam 
+                        ? 'bg-gray-600/60 border-gray-500 text-gray-400 cursor-not-allowed' 
+                        : 'bg-gray-700/80 border-gray-500 text-gray-200 focus:ring-2 focus:ring-blue-400 focus:border-blue-400'
+                    }`}
                     value={player.role}
                     onChange={e => handleRoleChange(idx, e.target.value)}
+                    disabled={isCreatingTeam}
                   >
                     <option value="">Select Lane</option>
                     {laneRoles.map(lane => (
@@ -107,9 +162,14 @@ export default function AddTeamModal({
                   
                   {idx >= defaultRoles.length && (
                     <button
-                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs font-bold transition-all duration-200 hover:scale-110"
-                      onClick={() => handleRemovePlayer(idx)}
+                      className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-200 ${
+                        isCreatingTeam 
+                          ? 'bg-gray-500 cursor-not-allowed' 
+                          : 'bg-red-500 hover:bg-red-600 text-white hover:scale-110'
+                      }`}
+                      onClick={() => !isCreatingTeam && handleRemovePlayer(idx)}
                       title="Remove player"
+                      disabled={isCreatingTeam}
                     >
                       ×
                     </button>
@@ -122,8 +182,13 @@ export default function AddTeamModal({
           {/* Add More Player Button */}
           <div className="mb-4">
             <button
-              className="w-full bg-gradient-to-r from-gray-700 to-gray-600 hover:from-gray-600 hover:to-gray-500 border border-gray-500 rounded-xl py-3 px-4 text-white font-semibold text-sm flex items-center justify-center transition-all duration-200 hover:scale-105"
+              className={`w-full border rounded-xl py-3 px-4 font-semibold text-sm flex items-center justify-center transition-all duration-200 ${
+                isCreatingTeam 
+                  ? 'bg-gray-600/60 border-gray-500 text-gray-400 cursor-not-allowed' 
+                  : 'bg-gradient-to-r from-gray-700 to-gray-600 hover:from-gray-600 hover:to-gray-500 border-gray-500 text-white hover:scale-105'
+              }`}
               onClick={handleAddPlayer}
+              disabled={isCreatingTeam}
             >
               <span className="mr-2">Add More Player</span>
               <span className="text-blue-400 text-lg font-bold">+</span>
@@ -134,10 +199,22 @@ export default function AddTeamModal({
         {/* Confirm Button */}
         <div className="relative z-10 w-full p-6 border-t border-gray-700">
           <button
-            className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold text-lg py-3 px-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 transform"
+            className={`w-full font-bold text-lg py-3 px-6 rounded-2xl shadow-lg transition-all duration-200 transform ${
+              isCreatingTeam || teamNameError || !teamName.trim()
+                ? 'bg-gray-500 cursor-not-allowed' 
+                : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 hover:shadow-xl hover:scale-105'
+            } text-white`}
             onClick={handleConfirm}
+            disabled={isCreatingTeam || teamNameError || !teamName.trim()}
           >
-            Create Team
+            {isCreatingTeam ? (
+              <div className="flex items-center justify-center gap-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                <span>Creating Team...</span>
+              </div>
+            ) : (
+              'Create Team'
+            )}
           </button>
         </div>
       </div>

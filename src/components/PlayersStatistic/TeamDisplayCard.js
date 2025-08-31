@@ -1,12 +1,12 @@
 import React from 'react';
 import { FaUsers, FaChartLine, FaTrophy, FaStar } from 'react-icons/fa';
 
-const TeamDisplayCard = ({ teamName }) => {
+const TeamDisplayCard = ({ teamName, teamLogo, onEditPlayers }) => {
   return (
     <div className="relative group mb-4 w-full max-w-4xl mx-auto">
       {/* Main Glassmorphism Card */}
       <div 
-        className="relative flex items-center justify-center px-8 py-6 cursor-pointer transition-all duration-500 transform hover:scale-[1.02] hover:shadow-2xl"
+        className="relative flex items-center justify-center px-8 py-6 transition-all duration-500 transform hover:scale-[1.02] hover:shadow-2xl"
         style={{ 
           background: `
             linear-gradient(135deg, 
@@ -25,6 +25,19 @@ const TeamDisplayCard = ({ teamName }) => {
           `
         }}
       >
+                 {/* Player Management Icon - Top Right */}
+         {onEditPlayers && (
+           <button
+             onClick={onEditPlayers}
+             className="absolute top-4 right-4 z-20 w-10 h-10 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white flex items-center justify-center transition-all duration-200 transform hover:scale-110 hover:rotate-12 shadow-lg shadow-purple-500/30 group-hover:shadow-purple-500/50"
+             title="Player Management"
+           >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
+        )}
+
         {/* Animated Border Glow */}
         <div 
           className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-all duration-500"
@@ -42,12 +55,12 @@ const TeamDisplayCard = ({ teamName }) => {
         ></div>
 
         <div className="relative flex items-center justify-center space-x-8 z-10">
-          {/* Enhanced Gaming Team Icon */}
+          {/* Enhanced Gaming Team Icon or Team Logo */}
           <div className="relative">
             <div 
-              className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl transform transition-all duration-300 group-hover:scale-110 group-hover:rotate-3"
+              className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl transform transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 overflow-hidden"
               style={{
-                background: `
+                background: teamLogo ? 'transparent' : `
                   linear-gradient(135deg, 
                     rgba(147, 51, 234, 0.8) 0%, 
                     rgba(59, 130, 246, 0.8) 50%, 
@@ -60,7 +73,26 @@ const TeamDisplayCard = ({ teamName }) => {
                 `
               }}
             >
-              <FaUsers className="w-8 h-8 text-white drop-shadow-lg" />
+                             {teamLogo ? (
+                 <img 
+                   src={teamLogo} 
+                   alt={`${teamName} Logo`} 
+                   className="w-full h-full object-contain"
+                   style={{
+                     padding: '4px',
+                     backgroundColor: 'rgba(0, 0, 0, 0.1)'
+                   }}
+                   onError={(e) => {
+                     // Fallback to icon if image fails to load
+                     e.target.style.display = 'none';
+                     e.target.nextSibling.style.display = 'flex';
+                   }}
+                 />
+               ) : null}
+              <FaUsers 
+                className={`w-8 h-8 text-white drop-shadow-lg ${teamLogo ? 'hidden' : 'block'}`} 
+                style={{ display: teamLogo ? 'none' : 'flex' }}
+              />
             </div>
             {/* Floating accent icons */}
             <FaTrophy className="absolute -top-2 -right-2 w-4 h-4 text-yellow-400 opacity-80 animate-bounce" style={{ animationDelay: '0.5s' }} />

@@ -64,7 +64,7 @@ export const getHeroData = async () => {
   console.log('Fetching hero data from API...');
 
   try {
-    const response = await fetch('/public/api/heroes');
+    const response = await fetch('/api/heroes');
     const data = await response.json();
     
     // Cache the data
@@ -109,7 +109,7 @@ export const getMatchesData = async (teamId = null) => {
   console.log('Fetching matches data from API for team:', teamId);
 
   try {
-    const url = teamId ? `/public/api/matches?team_id=${teamId}` : '/public/api/matches';
+          const url = teamId ? `/api/matches?team_id=${teamId}` : '/api/matches';
     
     // Prepare headers with team ID for backend compatibility
     const headers = {

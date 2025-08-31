@@ -89,6 +89,9 @@ export default function HomePage() {
   // Edit match state
   const [isEditing, setIsEditing] = useState(false);
   const [editingMatchId, setEditingMatchId] = useState(null);
+  
+  // Current team state
+  const [currentTeamName, setCurrentTeamName] = useState('');
 
 
   // User session timeout: 30 minutes
@@ -113,6 +116,41 @@ export default function HomePage() {
     setCurrentUser(user);
   }, [navigate]);
 
+  // Automatically set team as active when entering HomePage
+  useEffect(() => {
+    const latestTeam = localStorage.getItem('latestTeam');
+    if (latestTeam) {
+      const teamData = JSON.parse(latestTeam);
+      setCurrentTeamName(teamData.teamName || '');
+      // Set this team as active when entering the page
+      fetch('/api/teams/set-active', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ team_id: teamData.id }),
+      }).catch(error => {
+        console.error('Error setting team as active:', error);
+      });
+    }
+  }, []);
+
+  // Clear active team when leaving HomePage
+  useEffect(() => {
+    return () => {
+      // Clear active team when component unmounts (user leaves the page)
+      fetch('/api/teams/set-active', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ team_id: null }),
+      }).catch(error => {
+        console.error('Error clearing active team:', error);
+      });
+    };
+  }, []);
+
   // Load matches data with global caching
   useEffect(() => {
     const loadMatchesData = async () => {
@@ -124,6 +162,11 @@ export default function HomePage() {
         const latestTeam = localStorage.getItem('latestTeam');
         const teamData = latestTeam ? JSON.parse(latestTeam) : null;
         const teamId = teamData?.id;
+        
+        // Update current team name
+        if (teamData?.teamName) {
+          setCurrentTeamName(teamData.teamName);
+        }
         
         console.log('Loading matches data for team:', teamId);
         const data = await getMatchesData(teamId);
@@ -147,7 +190,7 @@ export default function HomePage() {
   useEffect(() => {
     const loadHeroes = async () => {
       try {
-        const response = await fetch('/public/api/heroes');
+        const response = await fetch('/api/heroes');
         const data = await response.json();
         setHeroList(data);
       } catch (error) {
@@ -156,6 +199,34 @@ export default function HomePage() {
     };
 
     loadHeroes();
+  }, []);
+
+  // Periodic activity update to keep team session alive
+  useEffect(() => {
+    const updateActivity = async () => {
+      const latestTeam = localStorage.getItem('latestTeam');
+      if (latestTeam) {
+        try {
+          const teamData = JSON.parse(latestTeam);
+          // Call getActive to update last activity timestamp
+          await fetch('/api/teams/active', {
+            headers: {
+              'X-Active-Team-ID': teamData.id
+            }
+          });
+        } catch (error) {
+          console.error('Error updating activity:', error);
+        }
+      }
+    };
+
+    // Update activity every 2 minutes
+    const interval = setInterval(updateActivity, 2 * 60 * 1000);
+    
+    // Also update immediately
+    updateActivity();
+    
+    return () => clearInterval(interval);
   }, []);
 
   // Create heroMap for O(1) lookup performance
@@ -170,11 +241,11 @@ export default function HomePage() {
   // Preload critical hero images for better perceived performance
   useEffect(() => {
     if (heroList.length > 0) {
-      const criticalHeroes = heroList.slice(0, 10); // Preload first 10 heroes
-      criticalHeroes.forEach(hero => {
-        const img = new Image();
-        img.src = `/public/heroes/${hero.role.toLowerCase()}/${hero.image.replace('.png', '.webp')}`;
-      });
+              const criticalHeroes = heroList.slice(0, 10); // Preload first 10 heroes
+        criticalHeroes.forEach(hero => {
+          const img = new Image();
+          img.src = `/heroes/${hero.role.toLowerCase()}/${hero.image}`;
+        });
     }
   }, [heroList]);
 
@@ -441,7 +512,7 @@ export default function HomePage() {
       headers['X-Active-Team-ID'] = currentTeamId;
     }
 
-    const res = await fetch(`/public/api/matches/${matchId}`, {
+            const res = await fetch(`/api/matches/${matchId}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(fullMatchPayload),
@@ -472,11 +543,27 @@ export default function HomePage() {
       }
     } catch (e) {}
 
-    // Helper to get player name by lane for a team
-    const getPlayerName = (playersArr, laneKey) => {
-      if (!Array.isArray(playersArr)) return '';
-      const found = playersArr.find(p => p.role === laneKey);
-      return found && found.name ? found.name : '';
+    // Helper to get player name - CRITICAL: Only use stored player data to prevent data mixing
+    const getPlayerName = (p, playersArr) => {
+      console.log(`getPlayerName called with:`, { pick: p, playersArr });
+      
+      // If player data is already stored in the pick, use it (this handles substitute players correctly)
+      if (p.player && typeof p.player === 'object' && p.player.name) {
+        console.log(`Using stored player object: ${p.player.name}`);
+        return p.player.name;
+      }
+      
+      // If player is just a string name, use it
+      if (p.player && typeof p.player === 'string') {
+        console.log(`Using stored player string: ${p.player}`);
+        return p.player;
+      }
+      
+      // CRITICAL: No fallback to role-based lookup - this prevents data mixing
+      // If no player data is stored, we cannot accurately attribute the hero usage
+      console.warn(`Pick missing player data - cannot accurately attribute hero usage:`, p);
+      console.warn(`This pick will be skipped in player statistics to prevent data mixing`);
+      return null; // Return null to indicate no player assignment
     };
 
     const fullPayload = {
@@ -486,37 +573,53 @@ export default function HomePage() {
           team: blueTeam,
           team_color: "blue",
           banning_phase1: banning.blue1,
-          picks1: picks.blue[1].map(p => ({
-            team: blueTeam,
-            lane: p.lane,
-            hero: p.hero,
-            player: getPlayerName(bluePlayers, p.lane)
-          })),
+          picks1: picks.blue[1].map(p => {
+            const playerName = getPlayerName(p, bluePlayers);
+            console.log(`Blue pick1 ${p.lane}:`, { lane: p.lane, hero: p.hero, player: p.player, resolvedPlayer: playerName });
+            return {
+              team: blueTeam,
+              lane: p.lane,
+              hero: p.hero,
+              player: playerName
+            };
+          }),
           banning_phase2: banning.blue2,
-          picks2: picks.blue[2].map(p => ({
-            team: blueTeam,
-            lane: p.lane,
-            hero: p.hero,
-            player: getPlayerName(bluePlayers, p.lane)
-          }))
+          picks2: picks.blue[2].map(p => {
+            const playerName = getPlayerName(p, bluePlayers);
+            console.log(`Blue pick2 ${p.lane}:`, { lane: p.lane, hero: p.hero, player: p.player, resolvedPlayer: playerName });
+            return {
+              team: blueTeam,
+              lane: p.lane,
+              hero: p.hero,
+              player: playerName
+            };
+          })
         },
         {
           team: redTeam,
           team_color: "red",
           banning_phase1: banning.red1,
-          picks1: picks.red[1].map(p => ({
-            team: redTeam,
-            lane: p.lane,
-            hero: p.hero,
-            player: getPlayerName(redPlayers, p.lane)
-          })),
+          picks1: picks.red[1].map(p => {
+            const playerName = getPlayerName(p, redPlayers);
+            console.log(`Red pick1 ${p.lane}:`, { lane: p.lane, hero: p.hero, player: p.player, resolvedPlayer: playerName });
+            return {
+              team: redTeam,
+              lane: p.lane,
+              hero: p.hero,
+              player: playerName
+            };
+          }),
           banning_phase2: banning.red2,
-          picks2: picks.red[2].map(p => ({
-            team: redTeam,
-            lane: p.lane,
-            hero: p.hero,
-            player: getPlayerName(redPlayers, p.lane)
-          }))
+          picks2: picks.red[2].map(p => {
+            const playerName = getPlayerName(p, redPlayers);
+            console.log(`Red pick2 ${p.lane}:`, { lane: p.lane, hero: p.hero, player: p.player, resolvedPlayer: playerName });
+            return {
+              team: redTeam,
+              lane: p.lane,
+              hero: p.hero,
+              player: playerName
+            };
+          })
         }
       ]
     };
@@ -531,7 +634,7 @@ export default function HomePage() {
       headers['X-Active-Team-ID'] = latestTeam.id;
     }
 
-    const response = await fetch('/public/api/matches', {
+            const response = await fetch('/api/matches', {
       method: 'POST',
       headers,
       body: JSON.stringify(fullPayload)
@@ -582,7 +685,7 @@ export default function HomePage() {
         headers['X-Active-Team-ID'] = currentTeamId;
       }
       
-      const response = await fetch(`/public/api/matches/${matchId}`, { 
+              const response = await fetch(`/api/matches/${matchId}`, { 
         method: 'DELETE',
         headers
       });
@@ -605,6 +708,17 @@ export default function HomePage() {
 
   // Logout handler
   const handleLogout = () => {
+    // Clear active team when logging out
+    fetch('/api/teams/set-active', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ team_id: null }),
+    }).catch(error => {
+      console.error('Error clearing active team on logout:', error);
+    });
+
     localStorage.removeItem('currentUser');
     navigate('/');
   };
@@ -697,6 +811,7 @@ export default function HomePage() {
         isEditing={isEditing}
         editingMatchId={editingMatchId}
         match={matches.find(m => m.id === editingMatchId)}
+        currentTeamName={currentTeamName}
       />
       {/* Lane Select Modal */}
       <LaneSelectModal

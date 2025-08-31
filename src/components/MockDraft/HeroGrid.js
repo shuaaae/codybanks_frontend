@@ -93,7 +93,7 @@ export default function HeroGrid({
                 style={isSelectable ? { cursor: 'pointer' } : { cursor: 'not-allowed', opacity: 0.5 }}
               >
                 <img
-                  src={`/public/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
+                  src={`/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
                   alt={hero.name}
                   className="w-16 h-16 rounded-full object-cover transition-transform group-hover:scale-105 group-active:scale-95"
                   draggable={false}
