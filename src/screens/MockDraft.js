@@ -6,11 +6,14 @@ import PageTitle from '../components/PageTitle';
 import Header from '../components/Header';
 import useSessionTimeout from '../hooks/useSessionTimeout';
 import { getHeroData } from '../App';
+import { buildApiUrl } from '../config/api';
 import {
   DraftBoard,
   DraftControls
 } from '../components/MockDraft';
 import ProfileModal from '../components/ProfileModal';
+import DraftHistoryModal from '../components/MockDraft/DraftHistoryModal';
+import DraftAnalysis from '../components/MockDraft/DraftAnalysis';
 
 export default function MockDraft() {
   const navigate = useNavigate();
@@ -33,6 +36,12 @@ export default function MockDraft() {
   // User avatar state
   const [currentUser, setCurrentUser] = useState(null);
   const [showProfileModal, setShowProfileModal] = useState(false); // Add profile modal state
+  // Draft history state
+  const [showDraftHistory, setShowDraftHistory] = useState(false);
+  
+  // Draft analysis state
+  const [showDraftAnalysis, setShowDraftAnalysis] = useState(false);
+  const [currentDraftData, setCurrentDraftData] = useState(null);
   
   // Custom lane assignments for pick slots - start with null (unassigned)
   const [customLaneAssignments, setCustomLaneAssignments] = useState({
@@ -59,7 +68,7 @@ export default function MockDraft() {
     if (latestTeam) {
       const teamData = JSON.parse(latestTeam);
       // Set this team as active when entering the page
-      fetch('/api/teams/set-active', {
+      fetch(buildApiUrl('/teams/set-active'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -75,7 +84,7 @@ export default function MockDraft() {
   useEffect(() => {
     return () => {
       // Clear active team when component unmounts (user leaves the page)
-      fetch('/api/teams/set-active', {
+      fetch(buildApiUrl('/teams/set-active'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -89,7 +98,7 @@ export default function MockDraft() {
 
   const handleLogout = () => {
     // Clear active team when logging out
-    fetch('/api/teams/set-active', {
+    fetch(buildApiUrl('/teams/set-active'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -214,8 +223,44 @@ export default function MockDraft() {
     );
   };
 
+  // Check if all lane assignments are completed for both teams
+  const areAllLanesAssigned = () => {
+    const blueLanes = customLaneAssignments.blue;
+    const redLanes = customLaneAssignments.red;
+    
+    // Check if all 5 lanes are assigned for both teams (no null values)
+    const blueComplete = blueLanes.every(lane => lane !== null);
+    const redComplete = redLanes.every(lane => lane !== null);
+    
+    return blueComplete && redComplete;
+  };
+
+  // Check if lane assignments are valid (no duplicates within a team)
+  const areLaneAssignmentsValid = () => {
+    const blueLanes = customLaneAssignments.blue.filter(lane => lane !== null);
+    const redLanes = customLaneAssignments.red.filter(lane => lane !== null);
+    
+    // Check for duplicates within each team
+    const blueHasDuplicates = blueLanes.length !== new Set(blueLanes).size;
+    const redHasDuplicates = redLanes.length !== new Set(redLanes).size;
+    
+    return !blueHasDuplicates && !redHasDuplicates;
+  };
+
   // Start draft
   function handleStartDraft() {
+    // Check if all lanes are assigned before starting
+    if (!areAllLanesAssigned()) {
+      alert('Please assign all lanes for both teams before starting the draft.');
+      return;
+    }
+    
+    // Check if lane assignments are valid (no duplicates)
+    if (!areLaneAssignmentsValid()) {
+      alert('Please ensure each lane is assigned only once per team.');
+      return;
+    }
+
     if (currentStep === -1) {
       setCurrentStep(0);
       setTimer(50);
@@ -254,6 +299,19 @@ export default function MockDraft() {
   // Advance step after pick/ban
   function handleHeroSelect(hero) {
     if (currentStep === -1 || draftFinished) return;
+    
+    // Check if all lanes are assigned before allowing hero selection
+    if (!areAllLanesAssigned()) {
+      alert('Please assign all lanes for both teams before selecting heroes.');
+      return;
+    }
+    
+    // Check if lane assignments are valid (no duplicates)
+    if (!areLaneAssignmentsValid()) {
+      alert('Please ensure each lane is assigned only once per team.');
+      return;
+    }
+    
     const step = draftSteps[currentStep];
     if (!step) return;
     if (step.type === 'ban') {
@@ -301,12 +359,13 @@ export default function MockDraft() {
     return step && step.type === type && step.team === team && step.index === idx;
   }
 
-  // Save draft as image
+  // Save draft as image and to history
   async function handleSaveDraft() {
     setIsSavingDraft(true);
     try {
       const draftBoard = document.querySelector('.draft-screenshot-area');
       if (!draftBoard) return;
+      
       // Temporarily remove box-shadow and transitions for speed
       const prevBoxShadow = draftBoard.style.boxShadow;
       const prevTransition = draftBoard.style.transition;
@@ -315,16 +374,57 @@ export default function MockDraft() {
       const canvas = await html2canvas(draftBoard, { backgroundColor: null, scale: 2 });
       draftBoard.style.boxShadow = prevBoxShadow;
       draftBoard.style.transition = prevTransition;
+      
+      // Download the image
       const link = document.createElement('a');
       link.download = 'draft.png';
       link.href = canvas.toDataURL('image/png');
       link.click();
+      
+      // Save to draft history
+      const draftData = {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        blueTeamName: blueTeamName || 'Blue Team',
+        redTeamName: redTeamName || 'Red Team',
+        bluePicks: picks.blue,
+        redPicks: picks.red,
+        blueBans: bans.blue,
+        redBans: bans.red,
+        imageData: canvas.toDataURL('image/png'),
+        customLaneAssignments: customLaneAssignments
+      };
+      
+      // Get existing drafts and add new one
+      const existingDrafts = JSON.parse(localStorage.getItem('savedDrafts') || '[]');
+      existingDrafts.unshift(draftData); // Add to beginning of array
+      
+      // Keep only last 50 drafts to prevent localStorage from getting too large
+      const limitedDrafts = existingDrafts.slice(0, 50);
+      localStorage.setItem('savedDrafts', JSON.stringify(limitedDrafts));
+      
+      console.log('Draft saved to history:', draftData);
     } catch (error) {
       console.error('Error saving draft:', error);
     } finally {
       setIsSavingDraft(false);
     }
   }
+
+  const handleShowDraftAnalysis = () => {
+    const draftData = {
+      blueTeamName: blueTeamName || 'Blue Team',
+      redTeamName: redTeamName || 'Red Team',
+      bluePicks: picks.blue,
+      redPicks: picks.red,
+      blueBans: bans.blue,
+      redBans: bans.red,
+      customLaneAssignments: customLaneAssignments
+    };
+    
+    setCurrentDraftData(draftData);
+    setShowDraftAnalysis(true);
+  };
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: `linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url(${navbarBg}) center/cover, #181A20` }}>
@@ -361,6 +461,8 @@ export default function MockDraft() {
             isActiveSlot={isActiveSlot}
             customLaneAssignments={customLaneAssignments}
             onLaneReassign={handleLaneReassign}
+            areAllLanesAssigned={areAllLanesAssigned()}
+            areLaneAssignmentsValid={areLaneAssignmentsValid()}
           />
           <DraftControls
             timerActive={timerActive}
@@ -374,7 +476,10 @@ export default function MockDraft() {
             handleResetDraft={handleResetDraft}
             handleSaveDraft={handleSaveDraft}
             isSavingDraft={isSavingDraft}
-            isLaneOrderModified={isLaneOrderModified()}
+            areAllLanesAssigned={areAllLanesAssigned()}
+            areLaneAssignmentsValid={areLaneAssignmentsValid()}
+            onShowDraftHistory={() => setShowDraftHistory(true)}
+            onShowDraftAnalysis={handleShowDraftAnalysis}
           />
         </div>
       </div>
@@ -384,6 +489,20 @@ export default function MockDraft() {
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
         user={currentUser}
+      />
+      
+      {/* Draft History Modal */}
+      <DraftHistoryModal 
+        isOpen={showDraftHistory}
+        onClose={() => setShowDraftHistory(false)}
+      />
+      
+      {/* Draft Analysis Modal */}
+      <DraftAnalysis
+        isOpen={showDraftAnalysis}
+        onClose={() => setShowDraftAnalysis(false)}
+        draftData={currentDraftData}
+        heroList={heroList}
       />
     </div>
   );

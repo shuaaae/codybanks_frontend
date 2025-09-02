@@ -10,7 +10,8 @@ const PlayerModal = ({
   isLoadingStats, 
   onFileSelect, 
   uploadingPlayer, 
-  onViewPerformance 
+  onViewPerformance,
+  matchMode = 'scrim'
 }) => {
   if (!modalInfo) return null;
 
@@ -200,7 +201,7 @@ const PlayerModal = ({
                   backgroundClip: 'text'
                 }}
               >
-                HERO SUCCESS RATE (Scrim)
+                HERO SUCCESS RATE ({matchMode === 'scrim' ? 'Scrim' : 'Tournament'})
               </div>
             </div>
             
@@ -238,7 +239,9 @@ const PlayerModal = ({
                           key={row.hero + idx}
                           className="hover:bg-white/5 transition-colors duration-200 border-b border-white/5"
                         >
-                          <td className="px-4 py-3 text-white font-semibold">{row.hero}</td>
+                          <td className="px-4 py-3 text-white font-semibold">
+                            {row.hero}
+                          </td>
                           <td className="px-4 py-3 text-emerald-400 text-center font-bold">{row.win}</td>
                           <td className="px-4 py-3 text-red-400 text-center font-bold">{row.lose}</td>
                           <td className="px-4 py-3 text-blue-300 text-center font-bold">{row.total}</td>

@@ -30,7 +30,9 @@ export default function DraftBoard({
   handleDraftSlotEdit,
   isCompleteDraft = false,
   customLaneAssignments,
-  onLaneReassign
+  onLaneReassign,
+  areAllLanesAssigned = true,
+  areLaneAssignmentsValid = true
 }) {
   // Show loading screen when heroes are still loading
   if (heroLoading) {
@@ -166,6 +168,8 @@ export default function DraftBoard({
               draftSteps={draftSteps}
               bans={bans}
               picks={picks}
+              areAllLanesAssigned={areAllLanesAssigned}
+              areLaneAssignmentsValid={areLaneAssignmentsValid}
             />
           </div>
         </div>

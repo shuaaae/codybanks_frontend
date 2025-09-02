@@ -105,7 +105,7 @@ export default function TeamPickerModal({
                             )}
                           </div>
                           <p className="text-gray-300 text-sm">
-                            {team.players_data?.length || 0} players • Last used {lastUsed}
+                            {team.player_count || team.players_data?.length || 0} players • Last used {lastUsed}
                           </p>
                         </div>
                       </div>

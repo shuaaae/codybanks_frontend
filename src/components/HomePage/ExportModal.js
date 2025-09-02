@@ -2,6 +2,43 @@ import React, { useState, useEffect } from 'react';
 import { FaTimes, FaPlay } from 'react-icons/fa';
 import DraftBoard from '../MockDraft/DraftBoard';
 
+// Import role icons
+import expIcon from '../../assets/exp.png';
+import midIcon from '../../assets/mid.png';
+import junglerIcon from '../../assets/jungle.png';
+import goldIcon from '../../assets/gold.png';
+import roamIcon from '../../assets/roam.png';
+import defaultPlayer from '../../assets/default.png';
+
+// Role icon mapping
+const ROLE_ICONS = {
+  exp: expIcon,
+  mid: midIcon,
+  jungler: junglerIcon,
+  gold: goldIcon,
+  roam: roamIcon
+};
+
+// Role label mapping
+const ROLE_LABELS = {
+  exp: 'Exp Lane',
+  mid: 'Mid Lane',
+  jungler: 'Jungler',
+  gold: 'Gold Lane',
+  roam: 'Roam'
+};
+
+// Helper functions
+const getRoleIcon = (role) => {
+  const normalizedRole = role?.toLowerCase()?.trim();
+  return ROLE_ICONS[normalizedRole] || midIcon; // Default to mid icon
+};
+
+const getRoleLabel = (role) => {
+  const normalizedRole = role?.toLowerCase()?.trim();
+  return ROLE_LABELS[normalizedRole] || 'Mid Lane'; // Default to mid lane
+};
+
 export default function ExportModal({ 
   isOpen, 
   onClose, 
@@ -35,7 +72,8 @@ export default function ExportModal({
   setPicks,
   heroList = [],
   isEditing = false,
-  currentTeamName = ''
+  currentTeamName = '',
+  matchMode = 'scrim'
 }) {
 
   const [showDraft, setShowDraft] = useState(false);
@@ -154,47 +192,7 @@ export default function ExportModal({
     }
   };
 
-  // Function to fix data issues and recover lost data
-  const fixDataIssues = async () => {
-    console.log('Running data fix and recovery...');
-    
-    try {
-      // 1. Check localStorage for team data
-      const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
-      console.log('Latest team from localStorage:', latestTeam);
-      
-      // 2. Fetch fresh data from backend
-      const response = await fetch('/api/teams/active');
-      if (response.ok) {
-        const activeTeam = await response.json();
-        console.log('Active team from backend:', activeTeam);
-        
-        // 3. Merge data - prioritize backend data but keep localStorage photos
-        const mergedTeamData = {
-          ...activeTeam,
-          players_data: activeTeam.players_data || activeTeam.players || [],
-          logo_path: latestTeam?.logo_path || activeTeam.logo_path
-        };
-        
-        // 4. Update localStorage with merged data
-        localStorage.setItem('latestTeam', JSON.stringify(mergedTeamData));
-        console.log('Updated localStorage with merged data:', mergedTeamData);
-        
-        // 5. Don't auto-populate team names - let user enter them manually
-        // setBlueTeam(mergedTeamData.name); // Commented out to keep field empty
-        // Both team fields remain empty for user to fill
-        
-        alert('Data has been recovered and synchronized!');
-        return mergedTeamData;
-      } else {
-        throw new Error('Failed to fetch active team');
-      }
-    } catch (error) {
-      console.error('Error fixing data issues:', error);
-      alert('Failed to recover data. Please check console for details.');
-      return null;
-    }
-  };
+
 
   // Handle comprehensive draft for both teams
   const handleComprehensiveDraft = () => {
@@ -1848,15 +1846,7 @@ export default function ExportModal({
               )}
             </h2>
             
-            {/* Data Recovery Button */}
-            <button
-              type="button"
-              onClick={fixDataIssues}
-              className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-semibold transition-colors text-sm"
-              title="Fix data issues and recover lost players"
-            >
-              🔧 Fix Data Issues
-            </button>
+
           </div>
           
           {/* Comprehensive Draft Button */}
@@ -1921,6 +1911,7 @@ export default function ExportModal({
                   </svg>
                 </button>
               </div>
+
               {/* Winner Field */}
               <input 
                 type="text" 
@@ -1981,11 +1972,11 @@ export default function ExportModal({
             </div>
             {/* Row 2: Red Team */}
             <div className="grid grid-cols-7 gap-6 items-center mb-2">
-              {/* Empty cell for alignment */}
+              {/* Empty cell for Date column alignment */}
               <div></div>
-              {/* Empty cell for alignment */}
+              {/* Empty cell for Results column alignment */}
               <div></div>
-              {/* Red Team */}
+              {/* Red Team - aligns with Team column */}
               <div className="flex items-center bg-[#181A20] rounded px-2 py-1">
                 <span className="mr-2 text-red-400 text-lg">🔴</span>
                 <input 
@@ -2000,7 +1991,7 @@ export default function ExportModal({
               {/* Banning Phase 1 */}
               <button
                 type="button"
-                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-red-400"
                 onClick={() => onBanClick('red1')}
               >
                 {banning.red1.length === 0 ? 'Choose a hero to ban' : banning.red1.join(', ')}
@@ -2008,7 +1999,7 @@ export default function ExportModal({
               {/* Pick 1 */}
               <button
                 type="button"
-                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-red-400"
                 onClick={() => onPickClick('red', 1)}
               >
                 {Array.isArray(picks.red[1]) && picks.red[1].length > 0
@@ -2018,7 +2009,7 @@ export default function ExportModal({
               {/* Banning Phase 2 */}
               <button
                 type="button"
-                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-red-400"
                 onClick={() => onBanClick('red2')}
               >
                 {banning.red2.length === 0 ? 'Choose a hero to ban' : banning.red2.join(', ')}
@@ -2026,7 +2017,7 @@ export default function ExportModal({
               {/* Pick 2 */}
               <button
                 type="button"
-                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-red-400"
                 onClick={() => onPickClick('red', 2)}
               >
                 {Array.isArray(picks.red[2]) && picks.red[2].length > 0
@@ -2354,22 +2345,64 @@ export default function ExportModal({
 
        {/* Player Selection Modal */}
        {showPlayerSelection && (
-         <div className="fixed inset-0 z-[10005] flex items-center justify-center bg-black bg-opacity-80">
-           <div className="modal-box w-full max-w-md bg-[#23232a] rounded-2xl shadow-2xl p-8">
+         <div className="fixed inset-0 z-[10005] flex items-center justify-center bg-black bg-opacity-80 backdrop-blur-sm animate-fadeIn">
+           <div className="w-full max-w-lg bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-3xl border border-gray-600 shadow-2xl p-8 mx-4 animate-slideIn">
              <div className="text-center">
-               {/* Header */}
-               <h3 className="text-xl font-bold text-white mb-4">
+               {/* Header with Role Icon */}
+               <div className="flex items-center justify-center gap-3 mb-6">
+                 {/* Role Icon */}
+                 {(() => {
+                   const role = pendingLaneAssignment?.lane || pendingHeroSelection?.lane || 'mid';
+                   const roleIcon = getRoleIcon(role);
+                   const roleLabel = getRoleLabel(role);
+                   
+                   return (
+                     <div className="relative">
+                       {/* Outer glow effect */}
+                       <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-400/20 to-purple-400/20 animate-pulse" 
+                            style={{ filter: 'blur(12px)', transform: 'scale(1.5)' }} />
+                       {/* Inner glow effect */}
+                       <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-400/30 to-purple-400/30 animate-pulse" 
+                            style={{ filter: 'blur(8px)', transform: 'scale(1.3)' }} />
+                       <div className="relative w-16 h-16 rounded-xl flex items-center justify-center border-2 border-blue-400/50"
+                            style={{
+                              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(147, 51, 234, 0.2) 100%)',
+                              boxShadow: '0 8px 25px rgba(59, 130, 246, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
+                            }}>
+                         <img 
+                           src={roleIcon} 
+                           alt={roleLabel} 
+                           className="w-10 h-10 object-contain drop-shadow-lg" 
+                         />
+                       </div>
+                     </div>
+                   );
+                 })()}
+                 
+                 {/* Title */}
+                 <div className="text-left">
+                   <h3 className="text-2xl font-bold text-white mb-1">
+                     {pendingLaneAssignment ? (
+                       `Select ${pendingLaneAssignment.lane} Player`
+                     ) : pendingHeroSelection ? (
+                       `Who will play ${pendingHeroSelection.hero.name}?`
+                     ) : (
+                       'Select Player'
+                     )}
+                   </h3>
+                   <p className="text-blue-400 text-sm font-medium">
+                     {(() => {
+                       const role = pendingLaneAssignment?.lane || pendingHeroSelection?.lane || 'mid';
+                       return getRoleLabel(role);
+                     })()}
+                   </p>
+                 </div>
+               </div>
+               
+               {/* Description */}
+               <p className="text-gray-300 mb-8 text-center max-w-md mx-auto">
                  {pendingLaneAssignment ? (
-                   `Select Player for ${pendingLaneAssignment.lane} Lane`
-                 ) : pendingHeroSelection ? (
-                   `Who will play ${pendingHeroSelection.hero.name}?`
-                 ) : (
-                   'Select Player'
-                 )}
-               </h3>
-               <p className="text-gray-300 mb-6">
-                 {pendingLaneAssignment ? (
-                   'Multiple players found for this role. Choose who will play this lane.'
+                   'Multiple players found for this role. Choose who will play this lane in the current match.'
                  ) : pendingHeroSelection ? (
                    `Multiple players found for ${pendingHeroSelection.lane} role. Choose who will play ${pendingHeroSelection.hero.name}.`
                  ) : (
@@ -2377,36 +2410,159 @@ export default function ExportModal({
                  )}
                </p>
                
-               {/* Player Options */}
-               <div className="space-y-3 mb-6">
-                 {availablePlayers.map(player => (
+               {/* Match Context Info */}
+               {pendingLaneAssignment && (
+                 <div className="mb-6 p-4 rounded-xl border border-blue-500/30"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(147, 51, 234, 0.1) 100%)'
+                      }}>
+                   <div className="flex items-center justify-center gap-2 mb-2">
+                     <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></span>
+                     <span className="text-blue-400 text-sm font-medium">Match Context</span>
+                   </div>
+                   <p className="text-gray-300 text-sm">
+                     This selection will be used for the current match draft. Consider player performance, hero synergy, and current form.
+                   </p>
+                 </div>
+               )}
+               
+               {/* Player Options with Enhanced Styling */}
+               <div className="space-y-4 mb-8">
+                 {availablePlayers.map((player, index) => (
                    <button
                      key={player.name}
                      onClick={() => handlePlayerSelection(player)}
-                     className="w-full p-3 text-left bg-gray-700 hover:bg-gray-600 rounded-lg text-white transition-colors border border-transparent hover:border-blue-400"
+                     className="w-full group relative overflow-hidden"
                    >
-                     <div className="font-semibold text-blue-400">{player.name}</div>
-                     <div className="text-sm text-gray-300">{player.role}</div>
+                     <div className="relative p-4 rounded-2xl border-2 border-transparent transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
+                          style={{
+                            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(147, 51, 234, 0.1) 100%)',
+                            backdropFilter: 'blur(10px)'
+                          }}>
+                       {/* Hover Effect Background */}
+                       <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-blue-500/5 to-purple-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                       
+                       {/* Player Content */}
+                       <div className="relative flex items-center gap-4">
+                         {/* Player Photo */}
+                         <div className="relative w-12 h-12 rounded-xl overflow-hidden shadow-lg">
+                           <img 
+                             src={player.photo || defaultPlayer} 
+                             alt={player.name}
+                             className="w-full h-full object-cover"
+                             onError={(e) => {
+                               e.target.src = defaultPlayer;
+                             }}
+                           />
+                         </div>
+                         
+                         {/* Player Info */}
+                         <div className="flex-1 text-left">
+                           <div className="flex items-center gap-3 mb-1">
+                             <h4 className="text-lg font-bold text-white group-hover:text-blue-400 transition-colors duration-300">
+                               {player.name}
+                             </h4>
+                             {/* Role Badge */}
+                             <span className="px-2 py-1 text-xs font-medium rounded-full"
+                                   style={{
+                                     background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(147, 51, 234, 0.2) 100%)',
+                                     border: '1px solid rgba(59, 130, 246, 0.3)',
+                                     color: '#60a5fa'
+                                   }}>
+                               {player.role}
+                             </span>
+                           </div>
+                           
+                           {/* Player Stats/Info */}
+                           <div className="flex items-center gap-4 text-sm text-gray-400">
+                             <span className="flex items-center gap-1">
+                               <span className="w-2 h-2 bg-green-400 rounded-full"></span>
+                               Available
+                             </span>
+                             {player.team_id && (
+                               <span className="flex items-center gap-1">
+                                 <span className="w-2 h-2 bg-blue-400 rounded-full"></span>
+                                 Team Member
+                               </span>
+                             )}
+                             {/* Player Experience Indicator */}
+                             {player.experience && (
+                               <span className="flex items-center gap-1">
+                                 <span className="w-2 h-2 bg-yellow-400 rounded-full"></span>
+                                 {player.experience} matches
+                               </span>
+                             )}
+                           </div>
+                         </div>
+                         
+                         {/* Selection Indicator */}
+                         <div className="w-6 h-6 rounded-full border-2 border-gray-500 group-hover:border-blue-400 transition-colors duration-300 flex items-center justify-center">
+                           <div className="w-3 h-3 rounded-full bg-transparent group-hover:bg-blue-400 transition-all duration-300" />
+                         </div>
+                       </div>
+                       
+                       {/* Hover Border Effect */}
+                       <div className="absolute inset-0 rounded-2xl border-2 border-transparent group-hover:border-blue-400/50 transition-all duration-300" />
+                     </div>
                    </button>
                  ))}
                </div>
                
-               {/* Cancel Button */}
-               <button
-                 onClick={() => {
-                   setShowPlayerSelection(false);
-                   setPendingLaneAssignment(null);
-                   setPendingHeroSelection(null);
-                   setAvailablePlayers([]);
-                 }}
-                 className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-               >
-                 Cancel
-               </button>
+               {/* Action Buttons */}
+               <div className="flex justify-center">
+                 <button
+                   onClick={() => {
+                     setShowPlayerSelection(false);
+                     setPendingLaneAssignment(null);
+                     setPendingHeroSelection(null);
+                     setAvailablePlayers([]);
+                   }}
+                   className="px-8 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl font-semibold transition-all duration-300 hover:scale-105 border border-gray-600 hover:border-gray-500"
+                 >
+                   Cancel
+                 </button>
+               </div>
              </div>
            </div>
          </div>
        )}
+       
+       {/* Custom CSS for animations */}
+       <style jsx>{`
+         @keyframes fadeIn {
+           from { opacity: 0; }
+           to { opacity: 1; }
+         }
+         
+         @keyframes slideIn {
+           from { 
+             opacity: 0;
+             transform: translateY(-20px) scale(0.95);
+           }
+           to { 
+             opacity: 1;
+             transform: translateY(0) scale(1);
+           }
+         }
+         
+         .animate-fadeIn {
+           animation: fadeIn 0.3s ease-out;
+         }
+         
+         .animate-slideIn {
+           animation: slideIn 0.4s ease-out;
+         }
+         
+         /* Hover effects for player cards */
+         .player-card-hover {
+           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+         }
+         
+         .player-card-hover:hover {
+           transform: translateY(-2px);
+           box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+         }
+       `}</style>
     </>
   );
 } 

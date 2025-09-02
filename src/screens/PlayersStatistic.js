@@ -7,6 +7,7 @@ import Header from '../components/Header';
 import ProfileModal from '../components/ProfileModal';
 import useSessionTimeout from '../hooks/useSessionTimeout';
 import { safelyActivateTeam, clearActiveTeam } from '../utils/teamUtils';
+import playerService from '../utils/playerService';
 import {
   TeamDisplayCard,
   PlayerModal,
@@ -49,9 +50,72 @@ function PlayersStatistic() {
   // User avatar state
   const [currentUser, setCurrentUser] = useState(null);
   const [showProfileModal, setShowProfileModal] = useState(false); // Add profile modal state
+  const [showScrollToTop, setShowScrollToTop] = useState(false); // Add scroll to top state
+  const [hideTeamCard, setHideTeamCard] = useState(false); // Add team card hide state
   
   // User session timeout: 30 minutes
   useSessionTimeout(30, 'currentUser', '/');
+
+  // Match mode state - load from localStorage
+  const [matchMode, setMatchMode] = useState(() => {
+    const savedMode = localStorage.getItem('selectedMatchMode');
+    return savedMode || 'scrim';
+  });
+
+  // Listen for match mode changes in localStorage
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'selectedMatchMode' && e.newValue) {
+        setMatchMode(e.newValue);
+        // Clear cached stats when mode changes to force fresh data
+        setAllPlayerStats({});
+        setAllPlayerH2HStats({});
+        setHeroStats([]);
+        setHeroH2HStats([]);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also check for changes on focus (for same-tab updates)
+    const handleFocus = () => {
+      const currentMode = localStorage.getItem('selectedMatchMode');
+      if (currentMode && currentMode !== matchMode) {
+        setMatchMode(currentMode);
+        setAllPlayerStats({});
+        setAllPlayerH2HStats({});
+        setHeroStats([]);
+        setHeroH2HStats([]);
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [matchMode]);
+
+  // Handle scroll events for scroll-to-top button and team card hide
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      setShowScrollToTop(scrollTop > 300);
+      setHideTeamCard(scrollTop > 100); // Hide team card after scrolling 100px
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Scroll to top function
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  };
 
   // Check if user is logged in
   useEffect(() => {
@@ -60,6 +124,7 @@ function PlayersStatistic() {
       navigate('/');
       return;
     }
+    console.log('PlayersStatistic: Setting currentUser from localStorage:', user);
     setCurrentUser(user);
   }, [navigate]);
 
@@ -72,6 +137,9 @@ function PlayersStatistic() {
       // Use the utility function to safely activate the team
       safelyActivateTeam(teamData.id);
       
+      // Set the active team ID in the PlayerService
+      playerService.setActiveTeamId(teamData.id);
+      
       // Immediately sync team data from localStorage
       setTeamPlayers(teamData);
       setCurrentTeamId(teamData.id);
@@ -79,23 +147,32 @@ function PlayersStatistic() {
       // Also refresh lanePlayers if no active match
       const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
       if (!latestMatch || !latestMatch.teams || latestMatch.teams.length === 0) {
-        if (teamData.players_data) {
-          const allPlayers = teamData.players_data.map(player => ({
+        const playersData = teamData.players_data || teamData.players;
+        if (playersData && Array.isArray(playersData)) {
+          const allPlayers = playersData.map(player => ({
             lane: player.role?.toLowerCase().replace(' ', '_') || 'unknown',
             player: player,
             hero: null
           }));
           setLanePlayers(allPlayers);
-          console.log('Initial lanePlayers set from localStorage:', allPlayers);
         }
       }
       
       // Also set the players array for immediate access
-      if (teamData.players_data) {
-        setPlayers(teamData.players_data);
+      // Handle both field names for backward compatibility
+      const playersData = teamData.players_data || teamData.players;
+      if (playersData && Array.isArray(playersData)) {
+        setPlayers(playersData);
+        // Stop loading if we have players data
+        setIsLoadingTeam(false);
       } else {
         setPlayers([]);
+        // Keep loading if no players data
+        setIsLoadingTeam(true);
       }
+    } else {
+      // No team found, keep loading
+      setIsLoadingTeam(true);
     }
     
     // Immediately load any cached photos from localStorage
@@ -125,9 +202,10 @@ function PlayersStatistic() {
 
   // Helper function to check if a player already exists
   const playerExists = useCallback((playerName, teamId) => {
-    if (!teamPlayers || !teamPlayers.players_data) return false;
+    if (!teamPlayers || (!teamPlayers.players_data && !teamPlayers.players)) return false;
     
-    return teamPlayers.players_data.some(player => 
+    const playersArray = teamPlayers.players_data || teamPlayers.players;
+    return playersArray.some(player => 
       player.name === playerName && player.team_id === teamId
     );
   }, [teamPlayers]);
@@ -147,26 +225,26 @@ function PlayersStatistic() {
       // No active match, populate with all current team players
       // First try to get from current state, then fallback to localStorage
       let teamData = teamPlayers;
-      if (!teamData || !teamData.players_data) {
+      if (!teamData || (!teamData.players_data && !teamData.players)) {
         teamData = JSON.parse(localStorage.getItem('latestTeam'));
       }
       
       // If still no data, try the currentPlayers key as a fallback
-      if (!teamData || !teamData.players_data) {
+      if (!teamData || (!teamData.players_data && !teamData.players)) {
         const currentPlayers = JSON.parse(localStorage.getItem('currentPlayers'));
         if (currentPlayers && currentPlayers.length > 0) {
           teamData = { players_data: currentPlayers };
         }
       }
       
-      if (teamData && teamData.players_data) {
-        const allPlayers = teamData.players_data.map(player => ({
+      const playersData = teamData?.players_data || teamData?.players;
+      if (playersData && Array.isArray(playersData)) {
+        const allPlayers = playersData.map(player => ({
           lane: player.role?.toLowerCase().replace(' ', '_') || 'unknown',
           player: player,
           hero: null
         }));
         setLanePlayers(allPlayers);
-        console.log('Refreshed lanePlayers with team data:', allPlayers);
       }
     }
   }, [teamPlayers]);
@@ -189,7 +267,7 @@ function PlayersStatistic() {
     return playerName;
   }
 
-  // Preload and cache player images
+  // Preload and cache player images (optimized to prevent excessive API calls)
   const preloadPlayerImages = useCallback(async (teamPlayers) => {
     if (!teamPlayers) return;
     
@@ -204,34 +282,44 @@ function PlayersStatistic() {
       
       const playerIdentifier = getPlayerIdentifier(player.name, player.role);
       
-              // Only set default photo if we don't have an uploaded photo
+      // Only set default photo if we don't have an uploaded photo
       if (!newImageCache[playerIdentifier]) {
-          // Check if we have an uploaded photo in localStorage first
-          const uploadedPhoto = localStorage.getItem(`playerPhoto_${playerIdentifier}`);
-          if (uploadedPhoto) {
-            newImageCache[playerIdentifier] = uploadedPhoto;
-          } else {
-        newImageCache[playerIdentifier] = defaultPlayer;
-          }
-          
+        // Check if we have an uploaded photo in localStorage first
+        const uploadedPhoto = localStorage.getItem(`playerPhoto_${playerIdentifier}`);
+        if (uploadedPhoto) {
+          newImageCache[playerIdentifier] = uploadedPhoto;
+        } else {
+          newImageCache[playerIdentifier] = defaultPlayer;
+        }
+        
         setImageCache(prev => ({
           ...prev,
-            [playerIdentifier]: newImageCache[playerIdentifier]
+          [playerIdentifier]: newImageCache[playerIdentifier]
         }));
       }
     });
     
-    // Only attempt to fetch photos for players that might have them
+    // Only attempt to fetch photos for players that don't have cached photos
     // This prevents unnecessary API calls and console errors
     const imagePromises = playersArray.map(async (player) => {
       if (!player.name) return;
       
       const playerIdentifier = getPlayerIdentifier(player.name, player.role);
       
-      // Skip if already cached with a real photo
+      // Skip if already cached with a real photo or if we've tried recently
       if (newImageCache[playerIdentifier] && newImageCache[playerIdentifier] !== defaultPlayer) return;
       
+      // Check if we've tried to fetch this player's photo recently (within last 5 minutes)
+      const lastFetchKey = `lastPhotoFetch_${playerIdentifier}`;
+      const lastFetch = localStorage.getItem(lastFetchKey);
+      if (lastFetch && (Date.now() - parseInt(lastFetch)) < 300000) {
+        return; // Skip if we tried recently
+      }
+      
       try {
+        // Mark that we're trying to fetch this player's photo
+        localStorage.setItem(lastFetchKey, Date.now().toString());
+        
         // Try to fetch player photo from server
         const response = await fetch(`/api/players/photo-by-name?playerName=${encodeURIComponent(player.name)}`, {
           method: 'GET',
@@ -296,6 +384,18 @@ function PlayersStatistic() {
       if (response.ok) {
         const activeTeam = await response.json();
         console.log('Fresh team data from backend:', activeTeam);
+        console.log('Players data structure:', activeTeam.players_data);
+        
+        // Check if players have IDs
+        if (activeTeam.players_data && activeTeam.players_data.length > 0) {
+          const playersWithIds = activeTeam.players_data.filter(p => p.id);
+          const playersWithoutIds = activeTeam.players_data.filter(p => !p.id);
+          console.log(`Players with IDs: ${playersWithIds.length}, Players without IDs: ${playersWithoutIds.length}`);
+          
+          if (playersWithoutIds.length > 0) {
+            console.warn('Some players still missing IDs:', playersWithoutIds);
+          }
+        }
         
         // Update localStorage with fresh backend data
         const updatedTeamData = {
@@ -309,13 +409,20 @@ function PlayersStatistic() {
         
         // Update state with fresh backend data
         setTeamPlayers(updatedTeamData);
+        setCurrentTeamId(updatedTeamData.id);
         setPlayers(updatedTeamData.players_data || []);
+        
+        // Update PlayerService with new team ID
+        playerService.setActiveTeamId(updatedTeamData.id);
         
         // Refresh lanePlayers with fresh data
         refreshLanePlayers();
         
-        // Preload images for all players
-        preloadPlayerImages(updatedTeamData);
+        // Preload images for all players (only once per team change)
+        if (!imageCache[`team_${updatedTeamData.id}`]) {
+          preloadPlayerImages(updatedTeamData);
+          setImageCache(prev => ({ ...prev, [`team_${updatedTeamData.id}`]: true }));
+        }
         
         console.log('Successfully refreshed team data from backend');
         return true;
@@ -332,17 +439,9 @@ function PlayersStatistic() {
   const handlePlayerCreate = async (newPlayer) => {
     console.log('Creating new player:', newPlayer);
     
-    // Normalize the role to ensure consistency
-    const normalizedPlayer = {
-      ...newPlayer,
-      role: normalizeRole(newPlayer.role)
-    };
-    
-    console.log('Normalized player data:', normalizedPlayer);
-    
     // Add to players array
     setPlayers(prev => {
-      const updated = [...prev, normalizedPlayer];
+      const updated = [...prev, newPlayer];
       console.log('Updated players array:', updated);
       return updated;
     });
@@ -353,7 +452,7 @@ function PlayersStatistic() {
       const playersArray = prev.players_data || prev.players;
       if (!playersArray) return prev;
       
-      const updatedPlayers = [...playersArray, normalizedPlayer];
+      const updatedPlayers = [...playersArray, newPlayer];
       console.log('Updated teamPlayers:', { ...prev, players_data: updatedPlayers, players: updatedPlayers });
       
       // Update localStorage with the new player data
@@ -397,34 +496,21 @@ function PlayersStatistic() {
     }
   };
 
-  // Auto-refresh team data periodically and when component becomes visible
+  // Auto-refresh team data periodically (reduced frequency to prevent excessive calls)
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && teamPlayers) {
-        console.log('Page became visible, auto-refreshing team data...');
-        refreshTeamDataFromBackend();
-      }
-    };
+    // Only set up periodic refresh if we have a team
+    if (!teamPlayers?.id) return;
 
-    // Refresh data when component mounts
-    if (teamPlayers?.id) {
-      console.log('Component mounted, refreshing team data...');
-      refreshTeamDataFromBackend();
-    }
-
-    // Set up periodic refresh (every 30 seconds)
+    // Set up periodic refresh (every 5 minutes instead of 30 seconds)
     const interval = setInterval(() => {
       if (teamPlayers?.id) {
         console.log('Periodic refresh of team data...');
         refreshTeamDataFromBackend();
       }
-    }, 30000);
+    }, 300000); // 5 minutes
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
     return () => {
       clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [teamPlayers?.id, refreshTeamDataFromBackend]);
 
@@ -475,21 +561,7 @@ function PlayersStatistic() {
     }
   };
 
-  // Auto-sync data when page becomes visible again
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && teamPlayers) {
-        console.log('Page became visible, auto-syncing data...');
-        manualSyncData();
-      }
-    };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [teamPlayers, manualSyncData]);
 
 
 
@@ -578,10 +650,20 @@ function PlayersStatistic() {
     const loadTeamData = async () => {
       setIsLoadingTeam(true);
       
-      // Add timeout to prevent infinite loading
-      const timeoutId = setTimeout(() => {
-        setIsLoadingTeam(false);
-      }, 10000); // Increased to 10 seconds
+      // Add timeout to prevent infinite loading, but only if we don't have data
+      let timeoutId;
+      if (!teamPlayers || !teamPlayers.players_data || teamPlayers.players_data.length === 0) {
+        timeoutId = setTimeout(() => {
+          setIsLoadingTeam(false);
+        }, 5000); // Reduced to 5 seconds for better UX
+      }
+      
+      // Cleanup function to clear timeout
+      const cleanup = () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+      };
       
       try {
         // First try to get team data from localStorage for immediate display
@@ -597,6 +679,11 @@ function PlayersStatistic() {
           setTeamPlayers(teamDataWithLogo);
           setCurrentTeamId(latestTeam.id);
           setIsLoadingTeam(false); // Stop loading immediately when we have data
+          
+          // Clear timeout since we have data
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
           
           // Then fetch fresh data from backend in background
           try {
@@ -631,8 +718,11 @@ function PlayersStatistic() {
                 setLanePlayers(allPlayers);
               }
               
-              // Preload player images for the team
-              preloadPlayerImages(updatedTeamData);
+              // Preload player images for the team (only once per team change)
+              if (!imageCache[`team_${updatedTeamData.id}`]) {
+                preloadPlayerImages(updatedTeamData);
+                setImageCache(prev => ({ ...prev, [`team_${updatedTeamData.id}`]: true }));
+              }
             }
           } catch (error) {
             console.error('Error fetching fresh team data:', error);
@@ -654,6 +744,11 @@ function PlayersStatistic() {
               setTeamPlayers(teamData);
               setCurrentTeamId(activeTeam.id);
               
+              // Clear timeout since we have data
+              if (timeoutId) {
+                clearTimeout(timeoutId);
+              }
+              
               // Update lanePlayers with all current team players if no match is active
               const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
               if (!latestMatch || !latestMatch.teams || latestMatch.teams.length === 0) {
@@ -665,7 +760,11 @@ function PlayersStatistic() {
                 setLanePlayers(allPlayers);
               }
               
-              preloadPlayerImages(teamData);
+              // Preload player images for the team (only once per team change)
+              if (!imageCache[`team_${teamData.id}`]) {
+                preloadPlayerImages(teamData);
+                setImageCache(prev => ({ ...prev, [`team_${teamData.id}`]: true }));
+              }
             } else {
               setTeamPlayers(null);
             }
@@ -680,7 +779,7 @@ function PlayersStatistic() {
         const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
         setTeamPlayers(latestTeam || null);
       } finally {
-        clearTimeout(timeoutId);
+        cleanup(); // Call cleanup function
         setIsLoadingTeam(false);
       }
     };
@@ -708,7 +807,11 @@ function PlayersStatistic() {
             logo_path: latestTeam.logo_path || null
           };
           setTeamPlayers(teamDataWithLogo);
-          preloadPlayerImages(teamDataWithLogo);
+          // Preload player images for the team (only once per team change)
+          if (!imageCache[`team_${teamDataWithLogo.id}`]) {
+            preloadPlayerImages(teamDataWithLogo);
+            setImageCache(prev => ({ ...prev, [`team_${teamDataWithLogo.id}`]: true }));
+          }
           
           // Also refresh lanePlayers if no active match
           const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
@@ -902,13 +1005,13 @@ function PlayersStatistic() {
               // The backend will handle role-based filtering
               try {
                 const [statsRes, h2hRes] = await Promise.all([
-                  fetch(`/api/players/${encodeURIComponent(p.name)}/hero-stats-by-team?teamName=${encodeURIComponent(teamPlayers.teamName)}&role=${encodeURIComponent(p.role)}`, {
+                  fetch(`/api/players/${encodeURIComponent(p.name)}/hero-stats-by-team?teamName=${encodeURIComponent(teamPlayers.teamName)}&role=${encodeURIComponent(p.role)}&match_type=${matchMode}`, {
                     
                     headers: {
                       'X-Active-Team-ID': teamPlayers.id
                     }
                   }),
-                  fetch(`/api/players/${encodeURIComponent(p.name)}/hero-h2h-stats-by-team?teamName=${encodeURIComponent(teamPlayers.teamName)}&role=${encodeURIComponent(p.role)}`, {
+                  fetch(`/api/players/${encodeURIComponent(p.name)}/hero-h2h-stats-by-team?teamName=${encodeURIComponent(teamPlayers.teamName)}&role=${encodeURIComponent(p.role)}&match_type=${matchMode}`, {
                     headers: {
                       'X-Active-Team-ID': teamPlayers.id
                     }
@@ -937,7 +1040,7 @@ function PlayersStatistic() {
       };
       fetchAllStats();
     }
-  }, [teamPlayers?.id, teamPlayers?.teamName]); // Remove isLoadingStats and teamPlayers to prevent loops
+  }, [teamPlayers?.id, teamPlayers?.teamName, matchMode]); // Include matchMode to refetch when mode changes
 
   useEffect(() => {
     const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
@@ -1066,7 +1169,7 @@ function PlayersStatistic() {
         
         if (!cached) {
           fetchPromises.push(
-            fetch(`/api/players/${encodeURIComponent(modalInfo.player.name)}/hero-stats-by-team?teamName=${encodeURIComponent(teamName)}&role=${encodeURIComponent(role)}`, {
+            fetch(`/api/players/${encodeURIComponent(modalInfo.player.name)}/hero-stats-by-team?teamName=${encodeURIComponent(teamName)}&role=${encodeURIComponent(role)}&match_type=${matchMode}`, {
               headers: {
                 'X-Active-Team-ID': teamPlayers?.id
               }
@@ -1078,7 +1181,7 @@ function PlayersStatistic() {
         
         if (!cachedH2H) {
           fetchPromises.push(
-            fetch(`/api/players/${encodeURIComponent(modalInfo.player.name)}/hero-h2h-stats-by-team?teamName=${encodeURIComponent(teamName)}&role=${encodeURIComponent(role)}`, {
+            fetch(`/api/players/${encodeURIComponent(modalInfo.player.name)}/hero-h2h-stats-by-team?teamName=${encodeURIComponent(teamName)}&role=${encodeURIComponent(role)}&match_type=${matchMode}`, {
               headers: {
                 'X-Active-Team-ID': teamPlayers?.id
               }
@@ -1276,63 +1379,9 @@ function PlayersStatistic() {
     return roleMap[laneKey] || laneKey;
   }
 
-  // Normalize role values to ensure consistency
-  function normalizeRole(role) {
-    if (!role) return role;
-    
-    const normalizedRole = role.toLowerCase().trim();
-    
-    // Map various role formats to standard ones
-    const roleMap = {
-      // Standard roles
-      'exp': 'exp',
-      'mid': 'mid',
-      'jungler': 'jungler',
-      'gold': 'gold',
-      'roam': 'roam',
-      'sub': 'substitute',
-      'substitute': 'substitute',
-      
-      // Common variations
-      'explane': 'exp',
-      'explaner': 'exp',
-      'top': 'exp',
-      'top_laner': 'exp',
-      'toplaner': 'exp',
-      
-      'midlane': 'mid',
-      'mid_laner': 'mid',
-      'midlaner': 'mid',
-      'middle': 'mid',
-      
-      'jungle': 'jungler',
-      'jungler': 'jungler',
-      
-      'adc': 'gold',
-      'marksman': 'gold',
-      'gold_lane': 'gold',
-      'goldlane': 'gold',
-      'carry': 'gold',
-      
-      'support': 'roam',
-      'roamer': 'roam',
-      'roam_lane': 'roam',
-      'roamlane': 'roam',
-      
-      'backup': 'substitute',
-      'reserve': 'substitute',
-      'sub': 'substitute'
-    };
-    
-    return roleMap[normalizedRole] || normalizedRole;
-  }
-
   // Check if a player is a substitute
   function isSubstitutePlayer(player) {
-    if (!player || !player.role) return false;
-    
-    const normalizedRole = normalizeRole(player.role);
-    return normalizedRole === 'substitute';
+    return playerService.isSubstitutePlayer(player);
   }
 
   // Get main players (non-substitutes) for a specific role
@@ -1342,19 +1391,7 @@ function PlayersStatistic() {
     const playersArray = teamPlayers.players_data || teamPlayers.players;
     if (!playersArray) return [];
     
-    const normalizedTargetRole = normalizeRole(roleKey);
-    
-    return playersArray.filter(p => {
-      if (!p.role) return false;
-      
-      const normalizedPlayerRole = normalizeRole(p.role);
-      
-      // Check if player has the target role using normalized values
-      const hasTargetRole = normalizedPlayerRole === normalizedTargetRole;
-      
-      // Return only if has target role AND is NOT a substitute
-      return hasTargetRole && !isSubstitutePlayer(p);
-    });
+    return playerService.getMainPlayersForRole(playersArray, roleKey);
   }
 
   function getHeroForLaneByLaneKey(laneKey, lanePlayers) {
@@ -1620,16 +1657,10 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
 
   // Player CRUD operation handlers
   const handlePlayerUpdate = (updatedPlayer) => {
-    // Normalize the role to ensure consistency
-    const normalizedPlayer = {
-      ...updatedPlayer,
-      role: normalizeRole(updatedPlayer.role)
-    };
-    
-    console.log('Normalized updated player data:', normalizedPlayer);
+    console.log('Updated player data:', updatedPlayer);
     
     // Update players array
-    setPlayers(prev => prev.map(p => p.id === normalizedPlayer.id ? normalizedPlayer : p));
+    setPlayers(prev => prev.map(p => p.id === updatedPlayer.id ? updatedPlayer : p));
     
     // Update teamPlayers state
     setTeamPlayers(prev => {
@@ -1637,7 +1668,7 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
       const playersArray = prev.players_data || prev.players;
       if (!playersArray) return prev;
       
-      const updatedPlayers = playersArray.map(p => p.id === normalizedPlayer.id ? normalizedPlayer : p);
+      const updatedPlayers = playersArray.map(p => p.id === updatedPlayer.id ? updatedPlayer : p);
       
       const updatedTeamData = {
         ...prev,
@@ -1656,11 +1687,8 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
     refreshLanePlayers();
   };
 
-  const handlePlayerDelete = (playerIdOrPlayer) => {
+  const handlePlayerDelete = async (playerIdOrPlayer) => {
     console.log('handlePlayerDelete called with:', playerIdOrPlayer);
-    console.log('Type of playerIdOrPlayer:', typeof playerIdOrPlayer);
-    console.log('Is it a number?', typeof playerIdOrPlayer === 'number');
-    console.log('Is it a string?', typeof playerIdOrPlayer === 'string');
     
     // Check if we received a player ID (number) or a player object
     if (typeof playerIdOrPlayer === 'number' || typeof playerIdOrPlayer === 'string') {
@@ -1668,48 +1696,73 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
       const playerId = playerIdOrPlayer;
       console.log('Deleting player with ID:', playerId);
       
-    // Remove from players array
-    setPlayers(prev => prev.filter(p => p.id !== playerId));
-    
-    // Remove from teamPlayers state
-    setTeamPlayers(prev => {
-      if (!prev) return prev;
-      const playersArray = prev.players_data || prev.players;
-      if (!playersArray) return prev;
+      // Don't update local state immediately - wait for backend confirmation
+      // This prevents the "No players to display" issue
+      console.log('Waiting for backend deletion confirmation before updating UI...');
       
-      const updatedPlayers = playersArray.filter(p => p.id !== playerId);
+      // Refresh data from backend immediately to get the updated state
+      try {
+        console.log('Refreshing team data from backend after deletion...');
+        const success = await refreshTeamDataFromBackend();
+        if (success) {
+          console.log('Successfully refreshed team data after deletion');
+          // UI will be updated automatically by refreshTeamDataFromBackend
+        } else {
+          console.warn('Failed to refresh team data after deletion, falling back to local update');
+          // Fallback: update local state if backend refresh fails
+          setPlayers(prev => prev.filter(p => p.id !== playerId));
+          setTeamPlayers(prev => {
+            if (!prev) return prev;
+            const playersArray = prev.players_data || prev.players;
+            if (!playersArray) return prev;
+            
+            const updatedPlayers = playersArray.filter(p => p.id !== playerId);
+            
+            const updatedTeamData = {
+              ...prev,
+              players_data: updatedPlayers,
+              players: updatedPlayers
+            };
+            
+            localStorage.setItem('latestTeam', JSON.stringify(updatedTeamData));
+            console.log('Fallback: Updated localStorage with deleted player:', updatedTeamData);
+            
+            return updatedTeamData;
+          });
+        }
+      } catch (error) {
+        console.error('Error refreshing team data after deletion:', error);
+        // Fallback: update local state if backend refresh fails
+        setPlayers(prev => prev.filter(p => p.id !== playerId));
+        setTeamPlayers(prev => {
+          if (!prev) return prev;
+          const playersArray = prev.players_data || prev.players;
+          if (!playersArray) return prev;
+          
+          const updatedPlayers = playersArray.filter(p => p.id !== playerId);
+          
+          const updatedTeamData = {
+            ...prev,
+            players_data: updatedPlayers,
+            players: updatedPlayers
+          };
+          
+          localStorage.setItem('latestTeam', JSON.stringify(updatedTeamData));
+          console.log('Fallback: Updated localStorage with deleted player:', updatedTeamData);
+          
+          return updatedTeamData;
+        });
+      }
       
-      const updatedTeamData = {
-        ...prev,
-        players_data: updatedPlayers,
-        players: updatedPlayers
-      };
-      
-      // Update localStorage with the updated player data
-      localStorage.setItem('latestTeam', JSON.stringify(updatedTeamData));
-      console.log('Updated localStorage with deleted player:', updatedTeamData);
-      
-      return updatedTeamData;
-    });
     } else {
       // Special handling for players without IDs (from create team)
       const playerToRemove = playerIdOrPlayer;
       console.log('Deleting player without ID:', playerToRemove);
       
       // Remove from players array using name and role
-      console.log('Filtering players array. Before:', players.length);
-      setPlayers(prev => {
-        const filtered = prev.filter(p => {
-          const shouldKeep = !(p.name === playerToRemove.name && p.role === playerToRemove.role);
-          if (!shouldKeep) {
-            console.log('Removing player:', p.name, p.role, 'because it matches:', playerToRemove.name, playerToRemove.role);
-          }
-          return shouldKeep;
-        });
-        console.log('Filtered players array. After:', filtered.length);
-        console.log('Removed player:', playerToRemove.name, playerToRemove.role);
-        return filtered;
-      });
+      setPlayers(prev => prev.filter(p => 
+        !(p.name === playerToRemove.name && p.role === playerToRemove.role)
+      ));
       
       // Remove from teamPlayers state using name and role
       setTeamPlayers(prev => {
@@ -1717,15 +1770,9 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
         const playersArray = prev.players_data || prev.players;
         if (!playersArray) return prev;
         
-        console.log('Filtering teamPlayers. Before:', playersArray.length);
-        const updatedPlayers = playersArray.filter(p => {
-          const shouldKeep = !(p.name === playerToRemove.name && p.role === playerToRemove.role);
-          if (!shouldKeep) {
-            console.log('Removing from teamPlayers:', p.name, p.role, 'because it matches:', playerToRemove.name, playerToRemove.role);
-          }
-          return shouldKeep;
-        });
-        console.log('Filtered teamPlayers. After:', updatedPlayers.length);
+        const updatedPlayers = playersArray.filter(p => 
+          !(p.name === playerToRemove.name && p.role === playerToRemove.role)
+        );
         
         const updatedTeamData = {
           ...prev,
@@ -1753,91 +1800,7 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
     refreshLanePlayers();
   };
 
-  // Function to fix data issues and recover lost data
-  const fixDataIssues = async () => {
-    console.log('Running data fix and recovery in PlayersStatistic...');
-    
-    if (!teamPlayers?.id) {
-      alert('No active team found. Please select a team first.');
-      return null;
-    }
 
-    try {
-      // 1. First, sync team players to fix any missing player records
-      console.log('Syncing team players for team ID:', teamPlayers.id);
-      const syncResponse = await fetch('/api/teams/sync-players', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ team_id: teamPlayers.id }),
-      });
-
-      if (syncResponse.ok) {
-        const syncResult = await syncResponse.json();
-        console.log('Team players synced successfully:', syncResult);
-        
-        // 2. Check localStorage for team data
-      const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
-      console.log('Latest team from localStorage:', latestTeam);
-      
-        // 3. Fetch fresh data from backend
-      const response = await fetch('/api/teams/active');
-      if (response.ok) {
-        const activeTeam = await response.json();
-        console.log('Active team from backend:', activeTeam);
-        
-          // 4. Merge data - prioritize backend data but keep localStorage photos
-        const mergedTeamData = {
-          ...activeTeam,
-          players_data: activeTeam.players_data || activeTeam.players || [],
-          logo_path: latestTeam?.logo_path || activeTeam.logo_path
-        };
-        
-          // 5. Update localStorage with merged data
-        localStorage.setItem('latestTeam', JSON.stringify(mergedTeamData));
-        localStorage.setItem('currentPlayers', JSON.stringify(mergedTeamData.players_data || []));
-        console.log('Updated localStorage with merged data:', mergedTeamData);
-        
-          // 6. Update state
-        setTeamPlayers(mergedTeamData);
-        setCurrentTeamId(mergedTeamData.id);
-        
-          // 7. Refresh lanePlayers
-        if (!mergedTeamData.players_data || mergedTeamData.players_data.length === 0) {
-          setLanePlayers(null);
-        } else {
-          const allPlayers = mergedTeamData.players_data.map(player => ({
-            lane: player.role?.toLowerCase().replace(' ', '_') || 'unknown',
-            player: player,
-            hero: null
-          }));
-          setLanePlayers(allPlayers);
-        }
-        
-          // 8. Update players array
-        setPlayers(mergedTeamData.players_data || []);
-        
-          // 9. Force re-render
-        setForceUpdate(prev => prev + 1);
-        
-          alert(`Data has been recovered and synchronized! ${syncResult.synced_count} players recovered, ${syncResult.updated_count} players updated.`);
-        return mergedTeamData;
-      } else {
-        throw new Error('Failed to fetch active team');
-        }
-      } else {
-        const errorData = await syncResponse.json().catch(() => ({}));
-        console.error('Failed to sync team players:', errorData);
-        alert(`Failed to sync team players: ${errorData.error || 'Unknown error'}`);
-        return null;
-      }
-    } catch (error) {
-      console.error('Error fixing data issues:', error);
-      alert('Failed to recover data. Please check console for details.');
-      return null;
-    }
-  };
 
   /**
    * Handles the photo upload confirmation process
@@ -2049,6 +2012,73 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
     }}>
       <PageTitle title="Players Statistic" />
       <style>{scrollbarHideStyles}</style>
+      <style>{`
+        /* Custom scrollbar styling */
+        .overflow-y-auto::-webkit-scrollbar {
+          width: 8px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-track {
+          background: rgba(0, 0, 0, 0.1);
+          border-radius: 4px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-thumb {
+          background: linear-gradient(135deg, #9333ea, #3b82f6);
+          border-radius: 4px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+          background: linear-gradient(135deg, #7c3aed, #2563eb);
+        }
+        
+        /* Ensure header doesn't overlap content */
+        .pt-24 {
+          padding-top: 6rem;
+        }
+        
+        /* Smooth scrolling for the entire page */
+        html {
+          scroll-behavior: smooth;
+        }
+        
+        /* Team card transition styles */
+        .team-card-transition {
+          transition: all 0.5s ease-in-out;
+        }
+        
+        /* Ensure smooth hiding/showing of team card */
+        .team-card-hidden {
+          opacity: 0;
+          transform: translateY(-1rem);
+          pointer-events: none;
+        }
+        
+        .team-card-visible {
+          opacity: 1;
+          transform: translateY(0);
+          pointer-events: auto;
+        }
+        
+        /* Prevent horizontal scrolling */
+        body, html {
+          overflow-x: hidden;
+        }
+        
+        /* Ensure main content doesn't cause horizontal scroll */
+        .overflow-x-hidden {
+          overflow-x: hidden !important;
+        }
+        
+        /* Global horizontal scroll prevention */
+        * {
+          max-width: 100%;
+          box-sizing: border-box;
+        }
+        
+        /* Ensure player cards don't overflow */
+        .player-grid-container {
+          overflow-x: hidden;
+          width: 100%;
+        }
+      `}</style>
       
       {/* Animated Background Particles */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -2072,16 +2102,18 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
       />
 
       {/* Main Content */}
-      <div className="min-h-[calc(100vh-80px)] flex flex-col items-center justify-center flex-1 relative z-10 px-4" style={{ marginTop: -80 }}>
+      <div className="min-h-[calc(100vh-80px)] flex flex-col items-center justify-start flex-1 relative z-10 px-4 pt-24 overflow-y-auto overflow-x-hidden scroll-smooth" style={{ marginTop: -80 }}>
         {/* Team Display Card */}
-        <div className="w-full max-w-7xl mx-auto mb-4 mt-12">
+        <div className={`w-full max-w-7xl mx-auto mb-8 mt-16 transition-all duration-500 ease-in-out transform ${
+          hideTeamCard 
+            ? 'opacity-0 -translate-y-4 pointer-events-none' 
+            : 'opacity-100 translate-y-0'
+        }`}>
           <TeamDisplayCard 
             teamName={getCurrentTeamName()} 
             teamLogo={getTeamLogo()} 
             onEditPlayers={() => setShowSettingsModal(true)}
           />
-          
-
         </div>
         
         {/* Loading Spinner */}
@@ -2102,7 +2134,16 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
         
         {/* Player Grid */}
         {!isLoadingTeam && teamPlayers && players && Array.isArray(players) && (
-          <div className="w-full max-w-7xl mx-auto">
+          <div className="w-full max-w-7xl mx-auto mb-8 overflow-x-hidden">
+            {/* Debug info */}
+            {console.log('Rendering PlayerGrid with:', { 
+              isLoadingTeam, 
+              hasTeamPlayers: !!teamPlayers, 
+              hasPlayers: !!players, 
+              playersIsArray: Array.isArray(players),
+              playersLength: players?.length,
+              teamPlayersData: teamPlayers?.players_data?.length
+            })}
             <PlayerGrid
               key={`player-grid-${forceUpdate}`}
               teamPlayers={teamPlayers}
@@ -2122,6 +2163,41 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
             />
           </div>
         )}
+        
+        {/* Debug: Show why PlayerGrid is not rendering */}
+        {!isLoadingTeam && (!teamPlayers || !players || !Array.isArray(players)) && (
+          <div className="w-full max-w-7xl mx-auto mb-8 p-8 bg-gray-800/50 rounded-xl border border-gray-600">
+            <div className="text-center">
+              <h3 className="text-white text-lg font-semibold mb-4">Debug Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div className="bg-gray-700/50 p-3 rounded-lg">
+                  <p className="text-gray-300">Loading State:</p>
+                  <p className="text-white font-mono">{isLoadingTeam ? 'true' : 'false'}</p>
+                </div>
+                <div className="bg-gray-700/50 p-3 rounded-lg">
+                  <p className="text-gray-300">Has Team Players:</p>
+                  <p className="text-white font-mono">{teamPlayers ? 'true' : 'false'}</p>
+                </div>
+                <div className="bg-gray-700/50 p-3 rounded-lg">
+                  <p className="text-gray-300">Has Players Array:</p>
+                  <p className="text-white font-mono">{players && Array.isArray(players) ? 'true' : 'false'}</p>
+                </div>
+                <div className="bg-gray-700/50 p-3 rounded-lg">
+                  <p className="text-gray-300">Players Length:</p>
+                  <p className="text-white font-mono">{players?.length || 0}</p>
+                </div>
+                <div className="bg-gray-700/50 p-3 rounded-lg">
+                  <p className="text-gray-300">Team Players Data:</p>
+                  <p className="text-white font-mono">{teamPlayers?.players_data?.length || 0}</p>
+                </div>
+                <div className="bg-gray-700/50 p-3 rounded-lg">
+                  <p className="text-gray-300">Current Team ID:</p>
+                  <p className="text-white font-mono">{currentTeamId || 'null'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Player Modal */}
@@ -2136,6 +2212,7 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
         onFileSelect={() => fileInputRef.current && fileInputRef.current.click()}
         uploadingPlayer={uploadingPlayer}
         onViewPerformance={() => setShowPerformanceModal(true)}
+        matchMode={matchMode}
       />
 
       {/* Performance Modal */}
@@ -2198,6 +2275,21 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
         style={{ display: 'none' }}
         onChange={e => handleFileSelect(e, modalInfo?.player?.name, modalInfo?.player?.role)}
       />
+
+      {/* Scroll to Top Button */}
+      {showScrollToTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed bottom-8 right-8 z-50 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white p-3 rounded-full shadow-lg transition-all duration-300 transform hover:scale-110"
+          title="Scroll to top"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+          </svg>
+        </button>
+      )}
+
+
     </div>
   );
 }

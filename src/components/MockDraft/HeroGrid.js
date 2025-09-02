@@ -15,7 +15,9 @@ export default function HeroGrid({
   currentStep,
   draftSteps,
   bans,
-  picks
+  picks,
+  areAllLanesAssigned = true,
+  areLaneAssignmentsValid = true
 }) {
   // Dynamically get unique roles from heroList, trimmed and filtered
   const uniqueRoles = Array.from(new Set(heroList.map(h => h.role?.trim()))).filter(Boolean);
@@ -78,9 +80,11 @@ export default function HeroGrid({
             const isBanned = bannedHeroNames.includes(hero.name);
             const isPicked = pickedHeroNames.includes(hero.name);
             const isDisabled = unavailableHeroNames.includes(hero.name);
+            const lanesNotAssigned = !areAllLanesAssigned || !areLaneAssignmentsValid;
             const isSelectable =
               currentStep !== -1 &&
               step &&
+              !lanesNotAssigned &&
               ((step.type === 'ban' && !isDisabled) ||
                (step.type === 'pick' && !isDisabled));
             return (

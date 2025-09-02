@@ -93,6 +93,10 @@ export default function WeeklyReport() {
   const [selectedObjectiveWeek, setSelectedObjectiveWeek] = useState('');
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const [matchMode, setMatchMode] = useState(() => {
+    const savedMode = localStorage.getItem('selectedMatchMode');
+    return savedMode || 'scrim';
+  });
 
   // User session timeout: 30 minutes
   useSessionTimeout(30, 'currentUser', '/', (timeoutMinutes) => {
@@ -101,20 +105,37 @@ export default function WeeklyReport() {
 
   // Automatically set team as active when entering WeeklyReport
   useEffect(() => {
-    const latestTeam = localStorage.getItem('latestTeam');
-    if (latestTeam) {
-      const teamData = JSON.parse(latestTeam);
-      // Set this team as active when entering the page
-      fetch('/api/teams/set-active', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ team_id: teamData.id }),
-      }).catch(error => {
-        console.error('Error setting team as active:', error);
-      });
-    }
+    const activateTeam = async () => {
+      const latestTeam = localStorage.getItem('latestTeam');
+      if (latestTeam) {
+        try {
+          const teamData = JSON.parse(latestTeam);
+          console.log('Activating team:', teamData);
+          
+          // Set this team as active when entering the page
+          const response = await fetch('/api/teams/set-active', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({ team_id: teamData.id }),
+          });
+          
+          if (response.ok) {
+            console.log('Team activated successfully');
+          } else {
+            console.error('Failed to activate team:', response.status);
+          }
+        } catch (error) {
+          console.error('Error setting team as active:', error);
+        }
+      } else {
+        console.warn('No team found in localStorage');
+      }
+    };
+    
+    activateTeam();
   }, []);
 
   // Clear active team when leaving WeeklyReport
@@ -126,6 +147,7 @@ export default function WeeklyReport() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ team_id: null }),
       }).catch(error => {
         console.error('Error clearing active team:', error);
@@ -170,6 +192,30 @@ export default function WeeklyReport() {
     saveDateRangeToStorage(dateRange);
   }, [dateRange]);
 
+  // Listen for localStorage changes to sync matchMode
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'selectedMatchMode' && e.newValue) {
+        setMatchMode(e.newValue);
+      }
+    };
+
+    const handleFocus = () => {
+      const savedMode = localStorage.getItem('selectedMatchMode');
+      if (savedMode && savedMode !== matchMode) {
+        setMatchMode(savedMode);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [matchMode]);
+
   const handleLogout = () => {
     // Clear active team when logging out
     fetch('/api/teams/set-active', {
@@ -177,6 +223,7 @@ export default function WeeklyReport() {
       headers: {
         'Content-Type': 'application/json',
       },
+      credentials: 'include',
       body: JSON.stringify({ team_id: null }),
     }).catch(error => {
       console.error('Error clearing active team on logout:', error);
@@ -193,6 +240,124 @@ export default function WeeklyReport() {
     loadNotesFromDatabase();
   }, []);
 
+  // Fetch data immediately when component mounts (if date range is available)
+  useEffect(() => {
+    if (dateRange && dateRange[0] && dateRange[0].startDate && dateRange[0].endDate) {
+      const startDate = format(dateRange[0].startDate, 'yyyy-MM-dd');
+      const endDate = format(dateRange[0].endDate, 'yyyy-MM-dd');
+      
+      if (startDate && endDate) {
+        setLoading(true);
+        
+        console.log('Initial data fetch on mount for date range:', startDate, 'to', endDate);
+        fetch(`/api/matches?match_type=${matchMode}`, {
+          credentials: 'include'
+        })
+          .then(res => res.json())
+          .then(data => {
+            console.log('Initial matches data:', data);
+            
+            // Since backend now filters by team ID automatically, we only need to filter by date
+            const filtered = data.filter(match => {
+              const d = new Date(match.match_date);
+              return d >= new Date(startDate) && d <= new Date(endDate);
+            });
+            
+            console.log('Initial date filtered matches:', filtered);
+            
+            // Get current team name for display purposes
+            const currentTeam = getCurrentTeam();
+            console.log('Current team:', currentTeam);
+            
+            const dayMap = {};
+            for (let d = new Date(startDate); d <= new Date(endDate); d.setDate(d.getDate() + 1)) {
+              const key = d.toISOString().slice(0, 10);
+              dayMap[key] = { win: 0, lose: 0 };
+            }
+            
+            filtered.forEach(match => {
+              const key = new Date(match.match_date).toISOString().slice(0, 10);
+              if (!(key in dayMap)) return;
+              
+              // Since backend filters by team ID, all matches returned are for the current team
+              // We can determine win/loss by checking if the current team is the winner
+              if (currentTeam && currentTeam.trim() !== '') {
+                const team = match.teams.find(t => t.team === currentTeam);
+                if (team) {
+                  if (team.team === match.winner) dayMap[key].win++;
+                  else dayMap[key].lose++;
+                }
+              } else {
+                // Fallback: if no team name, just count as a match
+                dayMap[key].win++;
+              }
+            });
+            
+            console.log('Initial day map:', dayMap);
+            
+            const days = Object.keys(dayMap).sort();
+            const progression = days.map(day => {
+              const { win, lose } = dayMap[day];
+              return {
+                day,
+                score: getProgressionScore(win, lose),
+                win,
+                lose
+              };
+            });
+            
+            console.log('Initial progression data:', progression);
+            setProgressionData(progression);
+            
+            // Precompute objective rows for turtle and lord
+            const toRows = (arr, type) => arr
+              .sort((a,b)=> new Date(a.match_date)-new Date(b.match_date))
+              .map(m => {
+                const d = new Date(m.match_date);
+                const key = d.toISOString().slice(0, 10);
+                if (key >= startDate && key <= endDate) {
+                  return {
+                    date: key,
+                    turtle: m.turtle_taken,
+                    lord: m.lord_taken,
+                    winner: m.winner,
+                    teams: m.teams
+                  };
+                }
+                return null;
+              }).filter(Boolean);
+            
+                         setObjectiveRows(toRows(filtered, 'turtle'));
+            
+            // Update objective history
+            const weekKey = `${startDate}_${endDate}`;
+            setObjectiveHistory(prev => ({
+              ...prev,
+              [weekKey]: {
+                turtleRows: toRows(filtered, 'turtle'),
+                lordRows: toRows(filtered, 'lord')
+              }
+            }));
+            
+            setObjectiveWeeks(prev => {
+              if (!prev.includes(weekKey)) {
+                return [...prev, weekKey];
+              }
+              return prev;
+            });
+            
+            setSelectedObjectiveWeek(weekKey);
+            
+            setLoading(false);
+          })
+          .catch(error => {
+            console.error('Error fetching initial data:', error);
+            setLoading(false);
+          });
+      }
+    }
+  }, [dateRange, matchMode]);
+
   // Function to load notes from database
   const loadNotesFromDatabase = async () => {
     try {
@@ -200,6 +365,7 @@ export default function WeeklyReport() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       });
 
       if (response.ok) {
@@ -226,6 +392,7 @@ export default function WeeklyReport() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           title: noteTitle.trim(),
           content: notes.trim(),
@@ -262,6 +429,7 @@ export default function WeeklyReport() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       });
 
       const data = await response.json();
@@ -312,6 +480,7 @@ export default function WeeklyReport() {
   function getCurrentTeam() {
     try {
       const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
+      console.log('Latest team from localStorage:', latestTeam);
       if (latestTeam && latestTeam.teamName) {
         return latestTeam.teamName;
       }
@@ -327,26 +496,26 @@ export default function WeeklyReport() {
   useEffect(() => {
     if (!startDate || !endDate) return;
     setLoading(true);
-            fetch('/api/matches')
+    
+    console.log('Fetching matches for date range:', startDate, 'to', endDate);
+    fetch(`/api/matches?match_type=${matchMode}`, {
+      credentials: 'include'
+    })
       .then(res => res.json())
       .then(data => {
         console.log('All matches data:', data);
         
-        const currentTeam = getCurrentTeam();
-        console.log('Current team:', currentTeam);
-        
-        const dateFiltered = data.filter(match => {
+        // Since backend now filters by team ID automatically, we only need to filter by date
+        const filtered = data.filter(match => {
           const d = new Date(match.match_date);
           return d >= new Date(startDate) && d <= new Date(endDate);
         });
         
-        console.log('Date filtered matches:', dateFiltered);
+        console.log('Date filtered matches:', filtered);
         
-        const filtered = (currentTeam && currentTeam.trim() !== '')
-          ? dateFiltered.filter(match => match.teams && match.teams.some(t => t.team === currentTeam))
-          : [];
-        
-        console.log('Final filtered matches:', filtered);
+        // Get current team name for display purposes
+        const currentTeam = getCurrentTeam();
+        console.log('Current team:', currentTeam);
         
         const dayMap = {};
         for (let d = new Date(startDate); d <= new Date(endDate); d.setDate(d.getDate() + 1)) {
@@ -358,12 +527,16 @@ export default function WeeklyReport() {
           const key = new Date(match.match_date).toISOString().slice(0, 10);
           if (!(key in dayMap)) return;
           
+          // Since backend filters by team ID, all matches returned are for the current team
+          // We can determine win/loss by checking if the current team is the winner
           if (currentTeam && currentTeam.trim() !== '') {
             const team = match.teams.find(t => t.team === currentTeam);
-            if (!team) return;
-            if (team.team === match.winner) dayMap[key].win++;
-            else dayMap[key].lose++;
+            if (team) {
+              if (team.team === match.winner) dayMap[key].win++;
+              else dayMap[key].lose++;
+            }
           } else {
+            // Fallback: if no team name, just count as a match
             dayMap[key].win++;
           }
         });
@@ -467,7 +640,7 @@ export default function WeeklyReport() {
         console.error('Error fetching matches:', error);
         setLoading(false);
       });
-  }, [startDate, endDate]);
+  }, [startDate, endDate, matchMode]);
 
   return (
     <div className="min-h-screen" style={{ background: `linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url(${navbarBg}) center/cover, #181A20` }}>

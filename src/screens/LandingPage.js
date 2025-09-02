@@ -471,11 +471,13 @@ export default function LandingPage() {
       
       const teamData = {
         teamName: selectedTeam.name,
-        players: selectedTeam.players_data || [],
+        players_data: selectedTeam.players_data || [],
         id: selectedTeam.id
       };
       
+      console.log('Selected team from API:', selectedTeam);
       console.log('Team data to store:', teamData);
+      console.log('Players data length:', selectedTeam.players_data?.length || 0);
       
       // Store team data in localStorage
       localStorage.setItem('latestTeam', JSON.stringify(teamData));

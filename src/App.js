@@ -15,25 +15,23 @@ import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-route
 // Global variable to track header navigation
 let isHeaderNavigation = false;
 
-// Global hero cache
-let heroCache = {
+// Global cache for matches data - enhanced to support multiple team/mode combinations
+const matchesCache = {
+  data: {}, // Store data for multiple combinations: { 'teamId_modeType': { data, timestamp } }
+  isLoading: {}, // Track loading state for each combination
+  lastAccess: {} // Track last access time for each combination
+};
+
+// Global cache for hero data
+const heroCache = {
   data: null,
   timestamp: null,
   isLoading: false
 };
 
-// Global matches cache
-let matchesCache = {
-  data: null,
-  timestamp: null,
-  isLoading: false,
-  teamId: null
-};
-
 // Global function to set header navigation flag
 export const setHeaderNavigation = (value) => {
   isHeaderNavigation = value;
-  console.log('Header navigation set to:', value);
 };
 
 // Global function to get hero data with caching
@@ -81,21 +79,25 @@ export const getHeroData = async () => {
   }
 };
 
-// Global function to get matches data with caching
-export const getMatchesData = async (teamId = null) => {
-  // If we have cached data for this team and it's less than 2 minutes old, return it
-  if (matchesCache.data && matchesCache.timestamp && matchesCache.teamId === teamId && (Date.now() - matchesCache.timestamp) < 2 * 60 * 1000) {
-    console.log('Returning cached matches data for team:', teamId);
-    return matchesCache.data;
+// Global function to get matches data with enhanced caching
+export const getMatchesData = async (teamId = null, matchType = 'scrim') => {
+  const cacheKey = `${teamId || 'no-team'}_${matchType}`;
+  
+  // If we have cached data for this combination and it's less than 2 minutes old, return it
+  if (matchesCache.data[cacheKey] && matchesCache.data[cacheKey].timestamp && 
+      (Date.now() - matchesCache.data[cacheKey].timestamp) < 2 * 60 * 1000) {
+    console.log('Returning cached matches data for:', cacheKey);
+    matchesCache.lastAccess[cacheKey] = Date.now();
+    return matchesCache.data[cacheKey].data;
   }
 
-  // If already loading, wait for the current request
-  if (matchesCache.isLoading) {
-    console.log('Matches data already loading, waiting...');
+  // If already loading this combination, wait for the current request
+  if (matchesCache.isLoading[cacheKey]) {
+    console.log('Matches data already loading for:', cacheKey, 'waiting...');
     return new Promise((resolve) => {
       const checkCache = () => {
-        if (!matchesCache.isLoading && matchesCache.data) {
-          resolve(matchesCache.data);
+        if (!matchesCache.isLoading[cacheKey] && matchesCache.data[cacheKey]) {
+          resolve(matchesCache.data[cacheKey].data);
         } else {
           setTimeout(checkCache, 100);
         }
@@ -105,11 +107,11 @@ export const getMatchesData = async (teamId = null) => {
   }
 
   // Start loading
-  matchesCache.isLoading = true;
-  console.log('Fetching matches data from API for team:', teamId);
+  matchesCache.isLoading[cacheKey] = true;
+  console.log('Fetching matches data from API for:', cacheKey);
 
   try {
-          const url = teamId ? `/api/matches?team_id=${teamId}` : '/api/matches';
+    const url = teamId ? `/api/matches?team_id=${teamId}&match_type=${matchType}` : `/api/matches?match_type=${matchType}`;
     
     // Prepare headers with team ID for backend compatibility
     const headers = {
@@ -132,17 +134,19 @@ export const getMatchesData = async (teamId = null) => {
 
     const data = await response.json();
     
-    // Cache the data
-    matchesCache.data = data;
-    matchesCache.timestamp = Date.now();
-    matchesCache.teamId = teamId;
-    matchesCache.isLoading = false;
+    // Cache the data for this specific combination
+    matchesCache.data[cacheKey] = {
+      data: data,
+      timestamp: Date.now()
+    };
+    matchesCache.lastAccess[cacheKey] = Date.now();
+    matchesCache.isLoading[cacheKey] = false;
     
-    console.log('Matches data cached successfully');
+    console.log('Matches data cached successfully for:', cacheKey);
     return data;
   } catch (error) {
-    console.error('Error fetching matches data:', error);
-    matchesCache.isLoading = false;
+    console.error('Error fetching matches data for:', cacheKey, error);
+    matchesCache.isLoading[cacheKey] = false;
     throw error;
   }
 };
@@ -157,11 +161,30 @@ export const clearHeroCache = () => {
 
 // Function to clear matches cache (for debugging or manual refresh)
 export const clearMatchesCache = () => {
-  matchesCache.data = null;
-  matchesCache.timestamp = null;
-  matchesCache.isLoading = false;
-  matchesCache.teamId = null;
+  matchesCache.data = {};
+  matchesCache.isLoading = {};
+  matchesCache.lastAccess = {};
   console.log('Matches cache cleared');
+};
+
+// Function to clear specific combination from cache
+export const clearMatchesCacheForCombination = (teamId = null, matchType = 'scrim') => {
+  const cacheKey = `${teamId || 'no-team'}_${matchType}`;
+  if (matchesCache.data[cacheKey]) {
+    delete matchesCache.data[cacheKey];
+    delete matchesCache.isLoading[cacheKey];
+    delete matchesCache.lastAccess[cacheKey];
+    console.log('Cleared cache for:', cacheKey);
+  }
+};
+
+// Function to get cache status for debugging
+export const getMatchesCacheStatus = () => {
+  return {
+    cachedCombinations: Object.keys(matchesCache.data),
+    loadingCombinations: Object.keys(matchesCache.isLoading).filter(key => matchesCache.isLoading[key]),
+    lastAccess: matchesCache.lastAccess
+  };
 };
 
 // Wrapper component to handle loading states

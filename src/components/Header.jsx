@@ -15,6 +15,12 @@ const Header = ({
     { label: 'WEEKLY REPORT', path: '/weekly-report' },
   ]
 }) => {
+  // Debug: Log the currentUser data structure
+  console.log('Header currentUser:', currentUser);
+  
+  // Ensure currentUser is a valid object
+  const safeUser = currentUser && typeof currentUser === 'object' ? currentUser : null;
+  
   const navigate = useNavigate();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showBurgerModal, setShowBurgerModal] = useState(false);
@@ -135,7 +141,7 @@ const Header = ({
       </div>
 
       {/* User Avatar and Dropdown */}
-      <div className="relative user-dropdown">
+      <div className="relative user-dropdown" style={{ zIndex: 1000 }}>
         <button
           onClick={() => setShowUserDropdown(!showUserDropdown)}
           className="w-10 h-10 hidden md:flex rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white transition-all duration-200 hover:scale-105 shadow-lg"
@@ -148,7 +154,7 @@ const Header = ({
 
         {/* Dropdown Menu */}
         {showUserDropdown && (
-          <div className="absolute hidden md:block right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50">
+          <div className="absolute hidden md:block right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50" style={{ minWidth: '200px', zIndex: 1001 }}>
             {/* User Info Section */}
             <div className="px-4 py-3 border-b border-gray-600">
               <div className="flex items-center gap-3">
@@ -159,10 +165,10 @@ const Header = ({
                 </div>
                 <div>
                   <div className="text-white font-medium text-sm">
-                    {currentUser?.name || 'User'}
+                    {safeUser?.name || safeUser?.username || (safeUser?.email && safeUser.email.includes('@') ? safeUser.email.split('@')[0] : 'User')}
                   </div>
                   <div className="text-gray-400 text-xs">
-                    {currentUser?.email || 'user@example.com'}
+                    {safeUser?.email || safeUser?.username || 'user@example.com'}
                   </div>
                 </div>
               </div>

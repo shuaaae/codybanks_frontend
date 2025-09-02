@@ -2,10 +2,11 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import navbarBg from '../assets/navbarbackground.jpg';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { FaSignOutAlt } from 'react-icons/fa';
+import { buildApiUrl } from '../config/api';
 import PageTitle from '../components/PageTitle';
 import Header from '../components/Header';
 import useSessionTimeout from '../hooks/useSessionTimeout';
-import { getMatchesData, clearMatchesCache } from '../App';
+import { getMatchesData, clearMatchesCache, clearMatchesCacheForCombination } from '../App';
 import {
   MatchTable,
   ExportModal,
@@ -93,6 +94,72 @@ export default function HomePage() {
   // Current team state
   const [currentTeamName, setCurrentTeamName] = useState('');
 
+  // Match mode state
+  const [matchMode, setMatchMode] = useState(() => {
+    // Load saved mode from localStorage, default to 'scrim'
+    const savedMode = localStorage.getItem('selectedMatchMode');
+    return savedMode || 'scrim';
+  });
+
+  // Handle mode change
+  const handleModeChange = async (newMode) => {
+    console.log('Switching to mode:', newMode);
+    
+    // If currently editing a match, warn the user
+    if (isEditing) {
+      const confirmed = window.confirm(
+        'You are currently editing a match. Switching modes will discard your changes. Are you sure you want to continue?'
+      );
+      if (!confirmed) {
+        return;
+      }
+      // Reset editing state
+      setIsEditing(false);
+      setEditingMatchId(null);
+      resetFormData();
+    }
+    
+    // Save mode to localStorage
+    localStorage.setItem('selectedMatchMode', newMode);
+    
+    // Don't clear the entire cache - just switch modes
+    setMatchMode(newMode);
+    
+    // Check if we already have data for this mode
+    const latestTeam = localStorage.getItem('latestTeam');
+    const teamData = latestTeam ? JSON.parse(latestTeam) : null;
+    const teamId = teamData?.id;
+    
+    if (teamId) {
+      try {
+        // Try to get cached data first
+        const data = await getMatchesData(teamId, newMode);
+        if (data && data.length > 0) {
+          console.log(`Found ${data.length} cached matches for ${newMode} mode`);
+          setMatches(data);
+          setIsLoading(false);
+          setErrorMessage('');
+        } else {
+          // No cached data, fetch from API
+          console.log(`No cached data for ${newMode} mode, fetching from API`);
+          setIsLoading(true);
+          setErrorMessage('');
+          
+          const freshData = await getMatchesData(teamId, newMode);
+          setMatches(freshData || []);
+        }
+      } catch (error) {
+        console.error('Error loading matches data for mode:', newMode, error);
+        setErrorMessage('Failed to load matches');
+        setMatches([]);
+        setIsLoading(false);
+      }
+    } else {
+      setMatches([]);
+      setIsLoading(false);
+    }
+  };
+
 
   // User session timeout: 30 minutes
   useSessionTimeout(30, 'currentUser', '/');
@@ -123,7 +190,7 @@ export default function HomePage() {
       const teamData = JSON.parse(latestTeam);
       setCurrentTeamName(teamData.teamName || '');
       // Set this team as active when entering the page
-      fetch('/api/teams/set-active', {
+      fetch(buildApiUrl('/teams/set-active'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -139,7 +206,7 @@ export default function HomePage() {
   useEffect(() => {
     return () => {
       // Clear active team when component unmounts (user leaves the page)
-      fetch('/api/teams/set-active', {
+      fetch(buildApiUrl('/teams/set-active'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -169,10 +236,20 @@ export default function HomePage() {
         }
         
         console.log('Loading matches data for team:', teamId);
-        const data = await getMatchesData(teamId);
+        const data = await getMatchesData(teamId, matchMode);
         
         console.log('Loaded matches:', data);
         setMatches(data || []);
+        
+        // Preload data for the other mode to ensure smooth switching
+        if (teamId) {
+          const otherMode = matchMode === 'scrim' ? 'tournament' : 'scrim';
+          console.log('Preloading data for other mode:', otherMode);
+          getMatchesData(teamId, otherMode).catch(error => {
+            console.log('Preload failed for mode:', otherMode, error);
+            // Don't show error for preload failures
+          });
+        }
         
       } catch (error) {
         console.error('Error loading matches data:', error);
@@ -184,7 +261,7 @@ export default function HomePage() {
     };
 
     loadMatchesData();
-  }, []);
+  }, [matchMode]); // Add matchMode to dependency array
 
   // Load heroes data
   useEffect(() => {
@@ -312,6 +389,12 @@ export default function HomePage() {
   function handleEditMatch(match) {
     setIsEditing(true);
     setEditingMatchId(match.id);
+
+    // Set match mode to match the existing match type
+    if (match.match_type && match.match_type !== matchMode) {
+      setMatchMode(match.match_type);
+      localStorage.setItem('selectedMatchMode', match.match_type);
+    }
 
     // Basic fields
     setMatchDate(match.match_date);
@@ -450,6 +533,7 @@ export default function HomePage() {
         turtle_taken: `${turtleTakenBlue || 0}-${turtleTakenRed || 0}`,
         lord_taken:   `${lordTakenBlue || 0}-${lordTakenRed || 0}`,
         team_id: currentTeamId,
+        match_type: matchMode,
       };
 
       if (isEditing && editingMatchId) {
@@ -649,9 +733,9 @@ export default function HomePage() {
       localStorage.setItem('latestMatch', JSON.stringify(fullPayload));
     }
 
-    // Refresh matches list
-    clearMatchesCache();
-    const data = await getMatchesData(matchPayload.team_id);
+    // Refresh matches list for current mode only
+    clearMatchesCacheForCombination(matchPayload.team_id, matchMode);
+    const data = await getMatchesData(matchPayload.team_id, matchMode);
     if (data && data.length > 0) {
       data.sort((a, b) => {
         if (a.match_date === b.match_date) return b.id - a.id;
@@ -742,6 +826,8 @@ export default function HomePage() {
             <TopControls 
               onExportClick={() => setModalState('export')}
               onHeroStatsClick={() => setShowHeroStatsModal(true)}
+              currentMode={matchMode}
+              onModeChange={handleModeChange}
             />
             {/* Match Table */}
             <MatchTable 
@@ -812,6 +898,7 @@ export default function HomePage() {
         editingMatchId={editingMatchId}
         match={matches.find(m => m.id === editingMatchId)}
         currentTeamName={currentTeamName}
+        matchMode={matchMode}
       />
       {/* Lane Select Modal */}
       <LaneSelectModal
