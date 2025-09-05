@@ -3,6 +3,7 @@ import bgImg from '../../assets/bg.jpg';
 import HeroRoleTabs from './HeroRoleTabs';
 import SearchBar from './SearchBar';
 import Spinner from './Spinner';
+import { buildApiUrl } from '../../config/api';
 
 export default function HeroGrid({
   heroList,
@@ -96,12 +97,31 @@ export default function HeroGrid({
                 className="flex flex-col items-center w-full max-w-[5rem] focus:outline-none group"
                 style={isSelectable ? { cursor: 'pointer' } : { cursor: 'not-allowed', opacity: 0.5 }}
               >
-                <img
-                  src={`/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
-                  alt={hero.name}
-                  className="w-16 h-16 rounded-full object-cover transition-transform group-hover:scale-105 group-active:scale-95"
-                  draggable={false}
-                />
+                <div className="w-16 h-16 rounded-full overflow-hidden bg-gradient-to-b from-gray-700 to-gray-800 flex items-center justify-center relative">
+                  <img
+                    src={`${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/hero-image/${hero.role?.trim().toLowerCase()}/${encodeURIComponent(hero.image)}`}
+                    alt={hero.name}
+                    className="w-full h-full object-cover transition-all duration-200 group-hover:scale-105 group-active:scale-95"
+                    draggable={false}
+                    loading="eager"
+                    decoding="async"
+                    onLoad={(e) => {
+                      e.target.style.opacity = '1';
+                    }}
+                    onError={(e) => {
+                      console.log(`Failed to load image for ${hero.name}:`, e.target.src);
+                      e.target.style.display = 'none';
+                      // Show fallback icon
+                      const fallback = e.target.nextElementSibling;
+                      if (fallback) fallback.style.display = 'flex';
+                    }}
+                    style={{ opacity: '0', transition: 'opacity 0.2s ease-in-out' }}
+                  />
+                  {/* Fallback icon for failed images */}
+                  <div className="absolute inset-0 flex items-center justify-center text-white text-xs font-bold" style={{ display: 'none' }}>
+                    ?
+                  </div>
+                </div>
                 <span className="text-xs text-white mt-1 text-center truncate w-full">{hero.name}</span>
               </button>
             );

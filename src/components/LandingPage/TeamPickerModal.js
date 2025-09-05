@@ -82,10 +82,15 @@ export default function TeamPickerModal({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-4">
                         {team.logo_path ? (
-                          <img 
-                            src={team.logo_path} 
-                            alt={`${team.name} logo`} 
-                            className="w-12 h-12 rounded-full object-cover border-2 border-gray-600"
+                          <img
+                            src={team.logo_path.startsWith('http') 
+                              ? team.logo_path 
+                              : team.logo_path.startsWith('storage/teams/')
+                                ? `https://api.coachdatastatistics.site/api/team-logo/${team.logo_path.replace('storage/teams/', '')}`
+                                : `https://api.coachdatastatistics.site/${team.logo_path}`
+                            }
+                            alt={`${team.name} logo`}
+                            className="w-12 h-12 object-contain"
                             onError={(e) => {
                               e.target.style.display = 'none';
                               e.target.nextSibling.style.display = 'flex';

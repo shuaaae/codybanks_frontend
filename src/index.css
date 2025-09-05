@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Body scroll lock for screenshot capture */
+.body-capture-lock {
+  overflow: hidden !important;
+}
+
 /* Enhanced Gaming Animations and Effects */
 @keyframes fadeIn {
   from {

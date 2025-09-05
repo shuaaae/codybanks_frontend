@@ -200,12 +200,12 @@ export default function AddTeamModal({
         <div className="relative z-10 w-full p-6 border-t border-gray-700">
           <button
             className={`w-full font-bold text-lg py-3 px-6 rounded-2xl shadow-lg transition-all duration-200 transform ${
-              isCreatingTeam || teamNameError || !teamName.trim()
+              isCreatingTeam || teamNameError || !teamName.trim() || !teamLogo
                 ? 'bg-gray-500 cursor-not-allowed' 
                 : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 hover:shadow-xl hover:scale-105'
             } text-white`}
             onClick={handleConfirm}
-            disabled={isCreatingTeam || teamNameError || !teamName.trim()}
+            disabled={isCreatingTeam || teamNameError || !teamName.trim() || !teamLogo}
           >
             {isCreatingTeam ? (
               <div className="flex items-center justify-center gap-3">

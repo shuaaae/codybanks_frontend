@@ -1,19 +1,21 @@
 import React from 'react';
 
-export default function DraftTimer({ currentStep, draftFinished, draftSteps, timer }) {
-  if (currentStep === -1) return null;
-
+export default function DraftTimer({ currentStep, draftFinished, draftSteps, timer, areAllLanesAssigned, areLaneAssignmentsValid }) {
   return (
     <>
       <div className="middle-text text-2xl font-bold text-white">
-        {draftFinished ? 'Draft Finished' : 
+        {currentStep === -1 ? 
+          (areAllLanesAssigned && areLaneAssignmentsValid ? 'Ready to Start' : 'Please assign all lanes for both teams first') :
+         draftFinished ? 'Draft Finished' : 
          draftSteps[currentStep]?.type === 'ban' ? 
            `${draftSteps[currentStep]?.team === 'blue' ? 'Blue' : 'Red'} Team Ban` : 
          draftSteps[currentStep]?.type === 'pick' ? 
            `${draftSteps[currentStep]?.team === 'blue' ? 'Blue' : 'Red'} Team Pick` : 
          'Ready'}
       </div>
-      {!draftFinished && <div id="timer" className="text-lg text-white">{timer}</div>}
+      {currentStep >= 0 && !draftFinished && (
+        <div id="timer" className="text-lg text-white">{timer}</div>
+      )}
     </>
   );
 } 

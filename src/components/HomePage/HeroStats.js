@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { FaSort, FaSortUp, FaSortDown, FaSearch, FaFilter, FaTrophy, FaBan, FaHandPaper, FaTimes } from 'react-icons/fa';
+import { buildApiUrl } from '../../config/api';
 
 const HeroStats = ({ isOpen, onClose, matches = [] }) => {
   // Get current team from localStorage
@@ -32,7 +33,7 @@ const HeroStats = ({ isOpen, onClose, matches = [] }) => {
   useEffect(() => {
     const loadHeroes = async () => {
       try {
-        const response = await fetch('/api/heroes');
+        const response = await fetch(buildApiUrl('/heroes'));
         const data = await response.json();
         setHeroList(data);
       } catch (error) {
@@ -99,7 +100,7 @@ const HeroStats = ({ isOpen, onClose, matches = [] }) => {
     heroList.forEach(hero => {
       stats[hero.name] = {
         hero: hero.name,
-        heroImage: `/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`,
+        heroImage: `https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`,
         heroRole: hero.role,
         pick: 0,
         ban: 0,

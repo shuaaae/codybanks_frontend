@@ -8,6 +8,9 @@ import ProfileModal from '../components/ProfileModal';
 import useSessionTimeout from '../hooks/useSessionTimeout';
 import { safelyActivateTeam, clearActiveTeam } from '../utils/teamUtils';
 import playerService from '../utils/playerService';
+import { buildApiUrl } from '../config/api';
+import { getMatchesData } from '../App';
+import userService from '../utils/userService';
 import {
   TeamDisplayCard,
   PlayerModal,
@@ -117,15 +120,37 @@ function PlayersStatistic() {
     });
   };
 
-  // Check if user is logged in
+  // Check if user is logged in and fetch fresh data from database
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('currentUser'));
-    if (!user) {
-      navigate('/');
-      return;
-    }
-    console.log('PlayersStatistic: Setting currentUser from localStorage:', user);
-    setCurrentUser(user);
+    const loadUser = async () => {
+      try {
+        const result = await userService.getCurrentUserWithPhoto();
+        if (result.success) {
+          console.log('PlayersStatistic: Setting currentUser from database:', result.user);
+          setCurrentUser(result.user);
+        } else {
+          // Fallback to localStorage if database fetch fails
+          const localUser = JSON.parse(localStorage.getItem('currentUser'));
+          if (localUser) {
+            console.log('PlayersStatistic: Setting currentUser from localStorage:', localUser);
+            setCurrentUser(localUser);
+          } else {
+            navigate('/');
+          }
+        }
+      } catch (error) {
+        console.error('Error loading user:', error);
+        // Fallback to localStorage
+        const localUser = JSON.parse(localStorage.getItem('currentUser'));
+        if (localUser) {
+          setCurrentUser(localUser);
+        } else {
+          navigate('/');
+        }
+      }
+    };
+
+    loadUser();
   }, [navigate]);
 
   // Automatically set team as active when entering PlayersStatistic
@@ -321,7 +346,7 @@ function PlayersStatistic() {
         localStorage.setItem(lastFetchKey, Date.now().toString());
         
         // Try to fetch player photo from server
-        const response = await fetch(`/api/players/photo-by-name?playerName=${encodeURIComponent(player.name)}`, {
+        const response = await fetch(buildApiUrl(`/players/photo-by-name?playerName=${encodeURIComponent(player.name)}`), {
           method: 'GET',
           headers: {
             'X-Active-Team-ID': teamPlayers.id
@@ -375,7 +400,7 @@ function PlayersStatistic() {
 
     try {
       console.log('Refreshing team data from backend...');
-      const response = await fetch(`/api/teams/active`, {
+      const response = await fetch(buildApiUrl(`/teams/active`), {
         headers: {
           'X-Active-Team-ID': teamPlayers.id
         }
@@ -641,151 +666,167 @@ function PlayersStatistic() {
           hero: null
         }));
         setLanePlayers(allPlayers);
-    } else {
-      setLanePlayers(null);
+      } else {
+        setLanePlayers(null);
       }
       localStorage.removeItem('currentMatchData');
     }
+  }, []); // Empty dependency array for initial load
 
-    const loadTeamData = async () => {
-      setIsLoadingTeam(true);
-      
-      // Add timeout to prevent infinite loading, but only if we don't have data
-      let timeoutId;
-      if (!teamPlayers || !teamPlayers.players_data || teamPlayers.players_data.length === 0) {
-        timeoutId = setTimeout(() => {
-          setIsLoadingTeam(false);
-        }, 5000); // Reduced to 5 seconds for better UX
-      }
-      
-      // Cleanup function to clear timeout
-      const cleanup = () => {
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-      };
-      
-      try {
-        // First try to get team data from localStorage for immediate display
-        const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
+  // Load team data when team changes
+  useEffect(() => {
+      const loadTeamData = async () => {
+        setIsLoadingTeam(true);
         
-        if (latestTeam && latestTeam.teamName) {
-          // Set team data immediately from localStorage for fast display
-          // Preserve logo_path if it exists
-          const teamDataWithLogo = {
-            ...latestTeam,
-            logo_path: latestTeam.logo_path || null
-          };
-          setTeamPlayers(teamDataWithLogo);
-          setCurrentTeamId(latestTeam.id);
-          setIsLoadingTeam(false); // Stop loading immediately when we have data
-          
-          // Clear timeout since we have data
+        // Add timeout to prevent infinite loading, but only if we don't have data
+        let timeoutId;
+        if (!teamPlayers || !teamPlayers.players_data || teamPlayers.players_data.length === 0) {
+          timeoutId = setTimeout(() => {
+            setIsLoadingTeam(false);
+          }, 5000); // Reduced to 5 seconds for better UX
+        }
+        
+        // Cleanup function to clear timeout
+        const cleanup = () => {
           if (timeoutId) {
             clearTimeout(timeoutId);
           }
+        };
+        
+        try {
+          // First try to get team data from localStorage for immediate display
+          const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
           
-          // Then fetch fresh data from backend in background
-          try {
-            const response = await fetch(`/api/teams/active`, {
-              headers: {
-                'X-Active-Team-ID': latestTeam.id
-              }
-            });
-            if (response.ok) {
-              const activeTeam = await response.json();
-              
-              // Update localStorage with fresh data
-              const updatedTeamData = {
-                teamName: activeTeam.name,
-                players_data: activeTeam.players_data || activeTeam.players || [],
-                id: activeTeam.id,
-                logo_path: activeTeam.logo_path || null
-              };
-              
-              localStorage.setItem('latestTeam', JSON.stringify(updatedTeamData));
-              setTeamPlayers(updatedTeamData);
-              setCurrentTeamId(activeTeam.id);
-              
-              // Update lanePlayers with all current team players if no match is active
-              const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
-              if (!latestMatch || !latestMatch.teams || latestMatch.teams.length === 0) {
-                const allPlayers = updatedTeamData.players_data.map(player => ({
-                  lane: player.role?.toLowerCase().replace(' ', '_') || 'unknown',
-                  player: player,
-                  hero: null
-                }));
-                setLanePlayers(allPlayers);
-              }
-              
-              // Preload player images for the team (only once per team change)
-              if (!imageCache[`team_${updatedTeamData.id}`]) {
-                preloadPlayerImages(updatedTeamData);
-                setImageCache(prev => ({ ...prev, [`team_${updatedTeamData.id}`]: true }));
-              }
+          if (latestTeam && latestTeam.teamName) {
+            // Set team data immediately from localStorage for fast display
+            // Preserve logo_path if it exists
+            const teamDataWithLogo = {
+              ...latestTeam,
+              logo_path: latestTeam.logo_path || null
+            };
+            setTeamPlayers(teamDataWithLogo);
+            setCurrentTeamId(latestTeam.id);
+            setIsLoadingTeam(false); // Stop loading immediately when we have data
+            
+            // Clear timeout since we have data
+            if (timeoutId) {
+              clearTimeout(timeoutId);
             }
-          } catch (error) {
-            console.error('Error fetching fresh team data:', error);
-            // Keep using localStorage data if API fails
-          }
-        } else {
-          // Try to fetch active team from API
-          try {
-            const response = await fetch(`/api/teams/active`);
-            if (response.ok) {
-              const activeTeam = await response.json();
-              const teamData = {
-                teamName: activeTeam.name,
-                players_data: activeTeam.players_data || activeTeam.players || [],
-                id: activeTeam.id,
-                logo_path: activeTeam.logo_path || null
-              };
-              localStorage.setItem('latestTeam', JSON.stringify(teamData));
-              setTeamPlayers(teamData);
-              setCurrentTeamId(activeTeam.id);
-              
-              // Clear timeout since we have data
-              if (timeoutId) {
-                clearTimeout(timeoutId);
+            
+            // Then fetch fresh data from backend in background
+            try {
+              const response = await fetch(buildApiUrl(`/teams/active`), {
+                headers: {
+                  'X-Active-Team-ID': latestTeam.id,
+                  'Content-Type': 'application/json'
+                }
+              });
+              if (response.ok) {
+                const activeTeam = await response.json();
+                
+                // Update localStorage with fresh data
+                const updatedTeamData = {
+                  teamName: activeTeam.name,
+                  players_data: activeTeam.players_data || activeTeam.players || [],
+                  id: activeTeam.id,
+                  logo_path: activeTeam.logo_path || null
+                };
+                
+                localStorage.setItem('latestTeam', JSON.stringify(updatedTeamData));
+                setTeamPlayers(updatedTeamData);
+                setCurrentTeamId(activeTeam.id);
+                
+                // Update lanePlayers with all current team players if no match is active
+                const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
+                if (!latestMatch || !latestMatch.teams || latestMatch.teams.length === 0) {
+                  const allPlayers = updatedTeamData.players_data.map(player => ({
+                    lane: player.role?.toLowerCase().replace(' ', '_') || 'unknown',
+                    player: player,
+                    hero: null
+                  }));
+                  setLanePlayers(allPlayers);
+                }
+                
+                // Preload player images for the team (only once per team change)
+                if (!imageCache[`team_${updatedTeamData.id}`]) {
+                  preloadPlayerImages(updatedTeamData);
+                  setImageCache(prev => ({ ...prev, [`team_${updatedTeamData.id}`]: true }));
+                }
               }
-              
-              // Update lanePlayers with all current team players if no match is active
-              const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
-              if (!latestMatch || !latestMatch.teams || latestMatch.teams.length === 0) {
-                const allPlayers = teamData.players_data.map(player => ({
-                  lane: player.role?.toLowerCase().replace(' ', '_') || 'unknown',
-                  player: player,
-                  hero: null
-                }));
-                setLanePlayers(allPlayers);
+            } catch (error) {
+              console.error('Error fetching fresh team data:', error);
+              // Keep using localStorage data if API fails
+            }
+          } else {
+            // Try to fetch active team from API
+            try {
+              const response = await fetch(buildApiUrl(`/teams/active`), {
+                headers: {
+                  'Content-Type': 'application/json'
+                }
+              });
+              if (response.ok) {
+                const activeTeam = await response.json();
+                
+                // Check if we have a valid team or if it's the "no teams" response
+                if (activeTeam.has_teams === false || !activeTeam.id) {
+                  console.log('No active team found, setting teamPlayers to null');
+                  setTeamPlayers(null);
+                  setCurrentTeamId(null);
+                } else {
+                  const teamData = {
+                    teamName: activeTeam.name,
+                    players_data: activeTeam.players_data || activeTeam.players || [],
+                    id: activeTeam.id,
+                    logo_path: activeTeam.logo_path || null
+                  };
+                  localStorage.setItem('latestTeam', JSON.stringify(teamData));
+                  setTeamPlayers(teamData);
+                  setCurrentTeamId(activeTeam.id);
+                  
+                  // Clear timeout since we have data
+                  if (timeoutId) {
+                    clearTimeout(timeoutId);
+                  }
+                  
+                  // Update lanePlayers with all current team players if no match is active
+                  const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
+                  if (!latestMatch || !latestMatch.teams || latestMatch.teams.length === 0) {
+                    const allPlayers = teamData.players_data.map(player => ({
+                      lane: player.role?.toLowerCase().replace(' ', '_') || 'unknown',
+                      player: player,
+                      hero: null
+                    }));
+                    setLanePlayers(allPlayers);
+                  }
+                  
+                  // Preload player images for the team (only once per team change)
+                  if (!imageCache[`team_${teamData.id}`]) {
+                    preloadPlayerImages(teamData);
+                    setImageCache(prev => ({ ...prev, [`team_${teamData.id}`]: true }));
+                  }
+                }
+              } else {
+                setTeamPlayers(null);
               }
-              
-              // Preload player images for the team (only once per team change)
-              if (!imageCache[`team_${teamData.id}`]) {
-                preloadPlayerImages(teamData);
-                setImageCache(prev => ({ ...prev, [`team_${teamData.id}`]: true }));
-              }
-            } else {
+            } catch (error) {
+              console.error('Error fetching active team:', error);
               setTeamPlayers(null);
             }
-          } catch (error) {
-            console.error('Error fetching active team:', error);
-            setTeamPlayers(null);
           }
+        } catch (error) {
+          console.error('Error loading team data:', error);
+          // Fallback to localStorage data
+          const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
+          setTeamPlayers(latestTeam || null);
+        } finally {
+          cleanup(); // Call cleanup function
+          setIsLoadingTeam(false);
         }
-      } catch (error) {
-        console.error('Error loading team data:', error);
-        // Fallback to localStorage data
-        const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
-        setTeamPlayers(latestTeam || null);
-      } finally {
-        cleanup(); // Call cleanup function
-        setIsLoadingTeam(false);
-      }
-    };
+      };
 
-    loadTeamData();
-  }, [currentTeamId]); // Only re-run when team changes, not when preloadPlayerImages changes
+      loadTeamData();
+    }, [currentTeamId]); // Only re-run when team changes, not when preloadPlayerImages changes
 
   // Listen for team changes and page visibility changes
   useEffect(() => {
@@ -943,7 +984,7 @@ function PlayersStatistic() {
   useEffect(() => {
     const loadPlayers = async () => {
       try {
-        const response = await fetch('/api/players');
+        const response = await fetch(buildApiUrl('/players'));
         const data = await response.json();
         
         // Ensure data is an array before setting it
@@ -992,6 +1033,27 @@ function PlayersStatistic() {
       
       const fetchAllStats = async () => {
         try {
+          // First, try to calculate statistics directly from match data (like Hero Statistics)
+          console.log('Attempting to calculate player statistics from match data...');
+          await calculatePlayerStatsFromMatches();
+          
+          // Check if we got any data from the direct calculation
+          const hasData = Object.keys(allPlayerStats).length > 0;
+          if (hasData) {
+            console.log('Successfully calculated player statistics from match data');
+            setIsLoadingStats(false);
+            statsFetchingRef.current = false;
+            return;
+          }
+          
+          // Fallback to API approach if direct calculation fails or returns no data
+          console.log('Falling back to API-based player statistics...');
+          console.log('Starting to fetch player statistics from API...', {
+            teamPlayers: teamPlayers?.teamName,
+            matchMode,
+            playersCount: playersArray.length
+          });
+          
           const statsObj = {};
           const h2hStatsObj = {};
           
@@ -1004,22 +1066,43 @@ function PlayersStatistic() {
               // Fetch stats for all players (including substitutes) to ensure accurate data
               // The backend will handle role-based filtering
               try {
+                const statsUrl = buildApiUrl(`/players/${encodeURIComponent(p.name)}/hero-stats-by-team?teamName=${encodeURIComponent(teamPlayers.teamName)}&role=${encodeURIComponent(p.role)}&match_type=${matchMode}`);
+                const h2hUrl = buildApiUrl(`/players/${encodeURIComponent(p.name)}/hero-h2h-stats-by-team?teamName=${encodeURIComponent(teamPlayers.teamName)}&role=${encodeURIComponent(p.role)}&match_type=${matchMode}`);
+                
+                console.log(`Fetching stats for ${p.name} (${p.role}):`, { statsUrl, h2hUrl });
+                
                 const [statsRes, h2hRes] = await Promise.all([
-                  fetch(`/api/players/${encodeURIComponent(p.name)}/hero-stats-by-team?teamName=${encodeURIComponent(teamPlayers.teamName)}&role=${encodeURIComponent(p.role)}&match_type=${matchMode}`, {
-                    
+                  fetch(statsUrl, {
                     headers: {
                       'X-Active-Team-ID': teamPlayers.id
                     }
                   }),
-                  fetch(`/api/players/${encodeURIComponent(p.name)}/hero-h2h-stats-by-team?teamName=${encodeURIComponent(teamPlayers.teamName)}&role=${encodeURIComponent(p.role)}&match_type=${matchMode}`, {
+                  fetch(h2hUrl, {
                     headers: {
                       'X-Active-Team-ID': teamPlayers.id
                     }
                   })
                 ]);
                 
+                console.log(`API responses for ${p.name}:`, {
+                  statsStatus: statsRes.status,
+                  h2hStatus: h2hRes.status,
+                  statsOk: statsRes.ok,
+                  h2hOk: h2hRes.ok
+                });
+                
+                if (!statsRes.ok || !h2hRes.ok) {
+                  console.error(`API error for ${p.name}:`, {
+                    statsStatus: statsRes.status,
+                    h2hStatus: h2hRes.status
+                  });
+                  return;
+                }
+                
                 const statsData = await statsRes.json();
                 const h2hData = await h2hRes.json();
+                
+                console.log(`Stats data for ${p.name}:`, { statsData, h2hData });
                 
                 statsObj[playerIdentifier] = statsData;
                 h2hStatsObj[playerIdentifier] = h2hData;
@@ -1029,6 +1112,7 @@ function PlayersStatistic() {
             })
           );
           
+          console.log('Final stats objects:', { statsObj, h2hStatsObj });
           setAllPlayerStats(statsObj);
           setAllPlayerH2HStats(h2hStatsObj);
         } catch (error) {
@@ -1040,7 +1124,31 @@ function PlayersStatistic() {
       };
       fetchAllStats();
     }
-  }, [teamPlayers?.id, teamPlayers?.teamName, matchMode]); // Include matchMode to refetch when mode changes
+  }, [teamPlayers?.id, teamPlayers?.teamName, matchMode, forceUpdate]); // Include matchMode and forceUpdate to refetch when mode changes or forced refresh
+
+  // Listen for match updates to refresh player statistics
+  useEffect(() => {
+    const handleMatchUpdate = async (event) => {
+      const { matchId, teamId, matchData } = event.detail;
+      
+      // Only refresh if the update is for the current team
+      if (teamId && teamPlayers?.id && teamId === teamPlayers.id) {
+        console.log('Match updated, refreshing player statistics from backend API...', { matchId, teamId, matchData });
+        
+        // Force refresh by incrementing the forceUpdate counter
+        // This will trigger the main useEffect that fetches stats from the backend API
+        setForceUpdate(prev => prev + 1);
+      }
+    };
+
+    // Add event listener for match updates
+    window.addEventListener('matchUpdated', handleMatchUpdate);
+
+    // Cleanup event listener on component unmount
+    return () => {
+      window.removeEventListener('matchUpdated', handleMatchUpdate);
+    };
+  }, [teamPlayers?.id]); // Remove stats dependencies to avoid infinite loops
 
   useEffect(() => {
     const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
@@ -1063,6 +1171,153 @@ function PlayersStatistic() {
     return teamPlayers && teamPlayers.teamName ? teamPlayers.teamName : 'Unknown Team';
   }, [teamPlayers, isLoadingTeam]);
 
+  // Function to calculate player statistics directly from match data (like Hero Statistics)
+  const calculatePlayerStatsFromMatches = useCallback(async () => {
+    if (!teamPlayers?.id || !teamPlayers?.teamName) {
+      console.log('No team data available for calculating player stats from matches');
+      return;
+    }
+
+    try {
+      console.log('Calculating player statistics from match data...', {
+        teamId: teamPlayers.id,
+        teamName: teamPlayers.teamName,
+        matchMode
+      });
+
+      // Get matches data using the global function
+      const matches = await getMatchesData(teamPlayers.id, matchMode);
+      console.log('Retrieved matches for player stats calculation:', matches?.length || 0);
+
+      if (!matches || matches.length === 0) {
+        console.log('No matches found for player stats calculation');
+        return;
+      }
+
+      const playersArray = teamPlayers?.players_data || teamPlayers?.players;
+      if (!playersArray || playersArray.length === 0) {
+        console.log('No players found for stats calculation');
+        return;
+      }
+
+      const statsObj = {};
+      const h2hStatsObj = {};
+
+      // Process each player
+      for (const player of playersArray) {
+        if (!player.name || !player.role) continue;
+
+        const playerIdentifier = getPlayerIdentifier(player.name, player.role);
+        console.log(`Calculating stats for ${player.name} (${player.role})`);
+
+        // Initialize player stats
+        const playerStats = {
+          player_name: player.name,
+          player_role: player.role,
+          total_matches: 0,
+          wins: 0,
+          losses: 0,
+          win_rate: 0,
+          hero_stats: {}
+        };
+
+        const playerH2HStats = {
+          player_name: player.name,
+          player_role: player.role,
+          h2h_stats: {}
+        };
+
+        // Process each match
+        matches.forEach(match => {
+          const matchWinner = match.winner;
+          
+          // Find the team that matches our current team
+          const ourTeam = match.teams.find(team => team.team === teamPlayers.teamName);
+          if (!ourTeam) return;
+
+          const isWinningTeam = ourTeam.team === matchWinner;
+          
+          // Get all picks for this team
+          const allPicks = [
+            ...(ourTeam.picks1 || []),
+            ...(ourTeam.picks2 || [])
+          ];
+
+          // Check if this player played in this match
+          const playerPick = allPicks.find(pick => {
+            if (typeof pick === 'string') return false; // Skip string picks
+            return pick.player && pick.player.name === player.name && pick.player.role === player.role;
+          });
+
+          if (playerPick) {
+            playerStats.total_matches++;
+            if (isWinningTeam) {
+              playerStats.wins++;
+            } else {
+              playerStats.losses++;
+            }
+
+            // Add hero stats
+            const heroName = playerPick.hero || playerPick.name;
+            if (heroName) {
+              if (!playerStats.hero_stats[heroName]) {
+                playerStats.hero_stats[heroName] = {
+                  hero_name: heroName,
+                  matches: 0,
+                  wins: 0,
+                  losses: 0,
+                  win_rate: 0
+                };
+              }
+              
+              playerStats.hero_stats[heroName].matches++;
+              if (isWinningTeam) {
+                playerStats.hero_stats[heroName].wins++;
+              } else {
+                playerStats.hero_stats[heroName].losses++;
+              }
+            }
+          }
+        });
+
+        // Calculate win rates
+        if (playerStats.total_matches > 0) {
+          playerStats.win_rate = (playerStats.wins / playerStats.total_matches) * 100;
+        }
+
+        // Calculate hero win rates
+        Object.values(playerStats.hero_stats).forEach(heroStat => {
+          if (heroStat.matches > 0) {
+            heroStat.win_rate = (heroStat.wins / heroStat.matches) * 100;
+          }
+        });
+
+        statsObj[playerIdentifier] = playerStats;
+        h2hStatsObj[playerIdentifier] = playerH2HStats;
+
+        console.log(`Calculated stats for ${player.name}:`, {
+          total_matches: playerStats.total_matches,
+          wins: playerStats.wins,
+          losses: playerStats.losses,
+          win_rate: playerStats.win_rate,
+          heroes_count: Object.keys(playerStats.hero_stats).length
+        });
+      }
+
+      // Update the state with calculated statistics
+      setAllPlayerStats(statsObj);
+      setAllPlayerH2HStats(h2hStatsObj);
+      
+      console.log('Player statistics calculated from match data:', {
+        players_count: Object.keys(statsObj).length,
+        stats: statsObj
+      });
+
+    } catch (error) {
+      console.error('Error calculating player statistics from matches:', error);
+    }
+  }, [teamPlayers?.id, teamPlayers?.teamName, teamPlayers?.players_data, teamPlayers?.players, matchMode, getPlayerIdentifier]);
+
   // Function to get team logo URL
   const getTeamLogo = useCallback(() => {
     if (!teamPlayers || !teamPlayers.logo_path) {
@@ -1079,13 +1334,18 @@ function PlayersStatistic() {
     else if (teamPlayers.logo_path.startsWith('/')) {
       logoUrl = teamPlayers.logo_path;
     }
-    // If logo_path is a storage path, construct the full URL
-    else if (teamPlayers.logo_path.startsWith('storage/')) {
-      logoUrl = `/${teamPlayers.logo_path}`;
+    // If logo_path is a storage path, use the new API route
+    else if (teamPlayers.logo_path.startsWith('storage/teams/')) {
+      const filename = teamPlayers.logo_path.replace('storage/teams/', '');
+      logoUrl = `https://api.coachdatastatistics.site/api/team-logo/${filename}`;
     }
-    // Default fallback
+    // If logo_path is a storage path, construct the full URL with the base domain (not API)
+    else if (teamPlayers.logo_path.startsWith('storage/')) {
+      logoUrl = `https://coachdatastatistics.site/${teamPlayers.logo_path}`;
+    }
+    // Default fallback - construct full URL with base domain
     else {
-      logoUrl = `/${teamPlayers.logo_path}`;
+      logoUrl = `https://coachdatastatistics.site/${teamPlayers.logo_path}`;
     }
     
     return logoUrl;
@@ -1169,7 +1429,7 @@ function PlayersStatistic() {
         
         if (!cached) {
           fetchPromises.push(
-            fetch(`/api/players/${encodeURIComponent(modalInfo.player.name)}/hero-stats-by-team?teamName=${encodeURIComponent(teamName)}&role=${encodeURIComponent(role)}&match_type=${matchMode}`, {
+            fetch(buildApiUrl(`/players/${encodeURIComponent(modalInfo.player.name)}/hero-stats-by-team?teamName=${encodeURIComponent(teamName)}&role=${encodeURIComponent(role)}&match_type=${matchMode}`), {
               headers: {
                 'X-Active-Team-ID': teamPlayers?.id
               }
@@ -1181,7 +1441,7 @@ function PlayersStatistic() {
         
         if (!cachedH2H) {
           fetchPromises.push(
-            fetch(`/api/players/${encodeURIComponent(modalInfo.player.name)}/hero-h2h-stats-by-team?teamName=${encodeURIComponent(teamName)}&role=${encodeURIComponent(role)}&match_type=${matchMode}`, {
+            fetch(buildApiUrl(`/players/${encodeURIComponent(modalInfo.player.name)}/hero-h2h-stats-by-team?teamName=${encodeURIComponent(teamName)}&role=${encodeURIComponent(role)}&match_type=${matchMode}`), {
               headers: {
                 'X-Active-Team-ID': teamPlayers?.id
               }
@@ -1412,7 +1672,7 @@ function PlayersStatistic() {
 
     try {
       console.log('Syncing team players for team ID:', teamPlayers.id);
-      const response = await fetch('/api/teams/sync-players', {
+      const response = await fetch(buildApiUrl('/teams/sync-players'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1460,14 +1720,14 @@ function PlayersStatistic() {
       const frontendPlayers = players.map(p => ({ name: p.name, role: p.role }));
       
       // Get backend player count
-      const response = await fetch(`/api/players?team_id=${teamPlayers.id}`);
+      const response = await fetch(buildApiUrl(`/players?team_id=${teamPlayers.id}`));
       if (response.ok) {
         const backendPlayers = await response.json();
         const backendPlayerCount = backendPlayers.length;
         const backendPlayerData = backendPlayers.map(p => ({ name: p.name, role: p.role, id: p.id }));
         
         // Get team data from backend
-        const teamResponse = await fetch(`/api/teams/${teamPlayers.id}`);
+        const teamResponse = await fetch(buildApiUrl(`/teams/${teamPlayers.id}`));
         let teamPlayerData = [];
         if (teamResponse.ok) {
           const teamData = await teamResponse.json();
@@ -1845,7 +2105,7 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
         formData.append('team_id', teamData.id);
       }
       
-      const response = await fetch(`/api/players/photo-by-name`, {
+      const response = await fetch(buildApiUrl(`/players/photo-by-name`), {
         method: 'POST',
         headers: {
           'X-Active-Team-ID': teamData?.id || ''
@@ -2265,6 +2525,9 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
         user={currentUser}
+        onUserUpdate={(updatedUser) => {
+          setCurrentUser(updatedUser);
+        }}
       />
 
       {/* Hidden file input */}

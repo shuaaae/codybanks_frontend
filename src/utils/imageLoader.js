@@ -1,0 +1,1 @@
+// Utility for loading hero images with better error handling

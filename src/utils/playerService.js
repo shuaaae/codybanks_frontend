@@ -3,9 +3,11 @@
  * Provides a clean interface for all player-related API calls and data management
  */
 
+import { buildApiUrl } from '../config/api';
+
 class PlayerService {
   constructor() {
-    this.baseUrl = '/api/players';
+    this.baseUrl = buildApiUrl('/players');
     this.activeTeamId = null;
   }
 

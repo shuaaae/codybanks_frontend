@@ -75,6 +75,14 @@ export default function ExportModal({
   currentTeamName = '',
   matchMode = 'scrim'
 }) {
+  // Helper function to get today's date in YYYY-MM-DD format
+  const getTodayDate = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   const [showDraft, setShowDraft] = useState(false);
 
@@ -109,14 +117,68 @@ export default function ExportModal({
     red: [null, null, null, null, null]
   });
 
+  // Get current team name for case-sensitive validation (if not provided as prop)
+  const latestTeam = JSON.parse(localStorage.getItem('latestTeam') || '{}');
+  const actualCurrentTeamName = currentTeamName || latestTeam.teamName || latestTeam.name || '';
+
+  // Check if export should be disabled based on validation rules
+  const isExportDisabled = () => {
+    if (!actualCurrentTeamName) return false; // If no team name, allow export
+    
+    // Check if either team name matches the current team name (case-sensitive)
+    const blueTeamMatches = blueTeam && blueTeam === actualCurrentTeamName;
+    const redTeamMatches = redTeam && redTeam === actualCurrentTeamName;
+    
+    // Check if results field is valid (must be either team name or opponent name)
+    const resultsValid = winner && (
+      winner === actualCurrentTeamName || // Your team won
+      winner === blueTeam || // Blue team won (if different from your team)
+      winner === redTeam    // Red team won (if different from your team)
+    );
+    
+    // Check if turtle and lord taken have values
+    const objectivesValid = turtleTakenBlue !== '' && turtleTakenRed !== '' && 
+                           lordTakenBlue !== '' && lordTakenRed !== '';
+    
+    // Check if complete draft is finished (all picks completed)
+    const isDraftComplete = () => {
+      // Check blue team picks
+      const bluePicks1 = picks.blue[1] || [];
+      const bluePicks2 = picks.blue[2] || [];
+      const bluePicksComplete = bluePicks1.length >= 3 && bluePicks2.length >= 2;
+      
+      // Check red team picks
+      const redPicks1 = picks.red[1] || [];
+      const redPicks2 = picks.red[2] || [];
+      const redPicksComplete = redPicks1.length >= 3 && redPicks2.length >= 2;
+      
+      return bluePicksComplete && redPicksComplete;
+    };
+    
+    // Export is disabled if:
+    // 1. Neither team matches the current team name, OR
+    // 2. Results field is not valid, OR
+    // 3. Turtle/Lord taken fields are empty, OR
+    // 4. Complete draft is not finished
+    return (!blueTeamMatches && !redTeamMatches) || 
+           !resultsValid || 
+           !objectivesValid || 
+           !isDraftComplete();
+  };
+
 
 
   // Auto-populate team names and player assignments when modal opens
   useEffect(() => {
-    if (isOpen) {
-      const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
-      
-      // Always keep team fields empty by default
+          if (isOpen) {
+        const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
+        
+        // Set default date to today if no date is set
+        if (!matchDate) {
+          setMatchDate(getTodayDate());
+        }
+        
+        // Always keep team fields empty by default
       if (!blueTeam) {
         setBlueTeam('');
       }
@@ -181,6 +243,8 @@ export default function ExportModal({
       logDraftState();
     }
   }, [isOpen, draftBans, draftPicks, laneAssignments, playerAssignments]);
+
+
 
   if (!isOpen) return null;
 
@@ -247,10 +311,17 @@ export default function ExportModal({
       };
       setPlayerAssignments(initialPlayerAssignments);
     }
-    // If editing, lane and player assignments will be populated from existing data below
+    // Load existing data if available (for both editing and new matches with existing data)
+    const hasExistingData = (banning.blue1 && banning.blue1.length > 0) || 
+                           (banning.blue2 && banning.blue2.length > 0) ||
+                           (banning.red1 && banning.red1.length > 0) ||
+                           (banning.red2 && banning.red2.length > 0) ||
+                           (picks.blue && picks.blue[1] && picks.blue[1].length > 0) ||
+                           (picks.blue && picks.blue[2] && picks.blue[2].length > 0) ||
+                           (picks.red && picks.red[1] && picks.red[1].length > 0) ||
+                           (picks.red && picks.red[2] && picks.red[2].length > 0);
     
-          // If editing, populate the draft with existing data
-      if (isEditing) {
+    if (hasExistingData) {
         // Populate bans from existing data
         const existingBans = {
           blue: [
@@ -380,6 +451,8 @@ export default function ExportModal({
       
       // Mark draft as finished since we have existing data
       setDraftFinished(true);
+      // Set current step to the end since draft is complete
+      setCurrentStep(completeDraftSteps.length - 1);
     } else {
       // For new matches, start with empty draft
       setDraftPicks({ blue: [], red: [] });
@@ -884,11 +957,19 @@ export default function ExportModal({
     const validationErrors = validateDraftData(finalBanning, finalPicks);
     if (validationErrors.length > 0) {
       console.error('Draft data validation failed:', validationErrors);
-      // You could show an error modal here instead of just logging
-      alert('Draft data validation failed. Please check your selections and try again.');
+      // Show detailed error message
+      const errorMessage = validationErrors.join('\n');
+      alert(`Match export failed:\n\n${errorMessage}\n\nPlease fix these issues and try again.`);
       return;
     }
 
+    // Debug: Log the final data being sent
+    console.log('ExportModal - Final data being sent to parent:', {
+      banning: finalBanning,
+      picks: finalPicks,
+      isEditing
+    });
+    
     // Call parent with computed payload (do NOT rely on setState finishing)
     onConfirm({ banning: finalBanning, picks: finalPicks });
   };
@@ -1452,7 +1533,7 @@ export default function ExportModal({
           newBans.push(null);
         }
         
-        newBans[index] = hero;
+        newBans[index] = hero.name || hero; // Store hero name for backend compatibility
         return { ...prev, [team]: newBans };
       });
     } else if (type === 'pick') {
@@ -1478,7 +1559,7 @@ export default function ExportModal({
             // Lane and player are already assigned - just update the hero
             const updatedPick = {
               ...existingPick,
-              hero: hero.name || hero, // Handle both hero objects and strings
+              hero: hero.name || hero, // Store hero name for backend compatibility
               name: hero.name || hero // Ensure backward compatibility
             };
             
@@ -1491,7 +1572,10 @@ export default function ExportModal({
             
             newPicks[index] = updatedPick;
             
-            return { ...prev, [team]: newPicks };
+            // Force immediate update by creating a new object reference
+            const updatedState = { ...prev, [team]: newPicks };
+            console.log(`Updated draft picks state:`, updatedState);
+            return updatedState;
           } else if (lane && !existingPlayer) {
             // Lane is assigned but no player - need to check for multiple players
             const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
@@ -1532,7 +1616,7 @@ export default function ExportModal({
                 const assignedPlayer = playersForRole[0];
                 const updatedPick = {
                   ...existingPick,
-                  hero: hero.name || hero,
+                  hero: hero.name || hero, // Store hero name for backend compatibility
                   name: hero.name || hero,
                   player: assignedPlayer
                 };
@@ -1540,35 +1624,44 @@ export default function ExportModal({
                 console.log(`Auto-assigned player ${assignedPlayer.name} to edited hero ${hero.name}`);
                 
                 newPicks[index] = updatedPick;
-                return { ...prev, [team]: newPicks };
+                // Force immediate update by creating a new object reference
+                const updatedState = { ...prev, [team]: newPicks };
+                console.log(`Auto-assigned player and updated draft picks state:`, updatedState);
+                return updatedState;
               }
             }
             
             // Fallback - just update the hero without player
             const updatedPick = {
               ...existingPick,
-              hero: hero.name || hero,
+              hero: hero.name || hero, // Store hero name for backend compatibility
               name: hero.name || hero
             };
             
             newPicks[index] = updatedPick;
-            return { ...prev, [team]: newPicks };
+            // Force immediate update by creating a new object reference
+            const updatedState = { ...prev, [team]: newPicks };
+            console.log(`Fallback update - updated draft picks state:`, updatedState);
+            return updatedState;
           } else {
             // No lane assigned - just update the hero
             const updatedPick = {
               ...existingPick,
-              hero: hero.name || hero,
+              hero: hero.name || hero, // Store hero name for backend compatibility
               name: hero.name || hero
             };
             
             newPicks[index] = updatedPick;
-            return { ...prev, [team]: newPicks };
+            // Force immediate update by creating a new object reference
+            const updatedState = { ...prev, [team]: newPicks };
+            console.log(`Fallback update - updated draft picks state:`, updatedState);
+            return updatedState;
           }
         } else {
           // If no existing pick, create a new one
           console.log(`Creating new pick at index ${index} for ${team} team`);
           newPicks[index] = {
-            hero: hero.name || hero,
+            hero: hero.name || hero, // Store hero name for backend compatibility
             name: hero.name || hero,
             lane: null, // Will need lane assignment
             player: null // Will need player assignment
@@ -1578,12 +1671,10 @@ export default function ExportModal({
       });
     }
     
-    // Close the hero picker modal (unless we're waiting for player selection)
-    if (!pendingHeroSelection) {
-      setSelectedDraftSlot(null);
-      setDraftSlotSearch('');
-      console.log(`Hero edit completed for ${type} slot ${index} on ${team} team`);
-    }
+    // Immediately close the hero picker modal
+    setSelectedDraftSlot(null);
+    setDraftSlotSearch('');
+    console.log(`Hero edit completed for ${type} slot ${index} on ${team} team`);
   };
 
   // IMPROVED: Lane assignment handler - only assigns lanes, no player selection
@@ -1601,6 +1692,30 @@ export default function ExportModal({
     
     // Note: Player assignment will be handled during hero selection
     // This ensures that the player is directly tied to the specific hero they'll play
+  };
+
+  // NEW: Handle lane swapping between slots via drag and drop
+  const handleLaneSwap = (team, sourceSlotIndex, targetSlotIndex) => {
+    if (sourceSlotIndex === targetSlotIndex) return; // No swap needed
+    
+    setLaneAssignments(prev => {
+      const newAssignments = { ...prev };
+      const teamLanes = [...newAssignments[team]];
+      
+      // Swap the lanes
+      const temp = teamLanes[sourceSlotIndex];
+      teamLanes[sourceSlotIndex] = teamLanes[targetSlotIndex];
+      teamLanes[targetSlotIndex] = temp;
+      
+      newAssignments[team] = teamLanes;
+      
+      console.log(`Swapped lanes between slots ${sourceSlotIndex} and ${targetSlotIndex} for ${team} team:`, {
+        sourceLane: temp,
+        targetLane: teamLanes[sourceSlotIndex]
+      });
+      
+      return newAssignments;
+    });
   };
 
   // Handle player selection when multiple players exist for same role
@@ -1732,37 +1847,30 @@ export default function ExportModal({
 
   // Get all banned and picked heroes for filtering
   const getAllBannedAndPickedHeroes = () => {
-    const bannedHeroes = [];
-    const pickedHeroes = [];
-    
-    // Get all banned heroes
-    Object.values(draftBans).forEach(teamBans => {
-      if (teamBans) {
-        teamBans.forEach(hero => {
-          if (hero && hero.name) {
-            bannedHeroes.push(hero.name);
-          }
-        });
-      }
-    });
-    
-    // Get all picked heroes
-    Object.values(draftPicks).forEach(teamPicks => {
-      if (teamPicks) {
-        teamPicks.forEach(hero => {
-          if (hero && hero.name) {
-            pickedHeroes.push(hero.name);
-          }
-        });
-      }
-    });
-    
-    return [...bannedHeroes, ...pickedHeroes];
+    const banNames = [...(draftBans.blue||[]), ...(draftBans.red||[])]
+      .map(h => h?.hero?.name ?? h?.name ?? h)
+      .filter(Boolean);
+
+    const pickNames = [...(draftPicks.blue||[]), ...(draftPicks.red||[])]
+      .map(p => p?.hero?.name ?? p?.name ?? p)
+      .filter(Boolean);
+
+    return [...new Set([...banNames, ...pickNames])];
   };
 
    // Validate draft data integrity before sending to parent
    const validateDraftData = (banningData, picksData) => {
      const errors = [];
+     
+     // Team name validation is now handled at the button level
+     
+     // Validate that team names are not empty
+     if (!blueTeam || blueTeam.trim() === '') {
+       errors.push('Blue team name is required');
+     }
+     if (!redTeam || redTeam.trim() === '') {
+       errors.push('Red team name is required');
+     }
      
      // Validate banning data structure
      if (!banningData.blue1 || !Array.isArray(banningData.blue1)) {
@@ -1822,12 +1930,12 @@ export default function ExportModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black bg-opacity-70 animate-fadeIn">
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-70 animate-fadeIn">
         <div 
-          style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', background: 'rgba(30, 41, 59, 0.85)', zIndex: 1000 }} 
+          style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', background: 'rgba(30, 41, 59, 0.85)', zIndex: 10001 }} 
           onClick={handleBackgroundClick} 
         />
-        <div className="modal-box w-full max-w-[110rem] rounded-2xl shadow-2xl p-8 px-20" style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 1001, borderRadius: 24, background: '#101014', boxShadow: '0 8px 32px rgba(0,0,0,0.25)', maxHeight: '90vh', overflowY: 'auto' }}>
+        <div className="modal-box w-full max-w-[110rem] rounded-2xl shadow-2xl p-8 px-20" style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 10002, borderRadius: 24, background: '#101014', boxShadow: '0 8px 32px rgba(0,0,0,0.25)', maxHeight: '90vh', overflowY: 'auto' }}>
           {/* Focus trap to prevent date input from being auto-focused */}
           <button
             type="button"
@@ -1837,16 +1945,19 @@ export default function ExportModal({
             id="modal-focus-trap"
           />
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-white">
-              {isEditing ? 'Edit Match Data' : 'Data Draft Input'}
-              {currentTeamName && (
-                <span className="text-2xl text-gray-300 font-normal ml-2">
-                  for <span className="text-blue-300 font-semibold">{currentTeamName}</span>
-                </span>
-              )}
-            </h2>
-            
-
+            <div className="flex items-center gap-4">
+              <h2 className="text-2xl font-bold text-white">
+                {isEditing ? 'Edit Match Data' : 'Data Draft Input'}
+                {actualCurrentTeamName && (
+                  <span className="text-2xl text-gray-300 font-normal ml-2">
+                    for <span className="text-blue-300 font-semibold">{actualCurrentTeamName}</span>
+                  </span>
+                )}
+              </h2>
+              <div className="text-gray-400 text-sm bg-gray-800 px-3 py-1 rounded-lg border border-gray-600">
+                ℹ️ Team names are case-sensitive
+              </div>
+            </div>
           </div>
           
           {/* Comprehensive Draft Button */}
@@ -1890,48 +2001,70 @@ export default function ExportModal({
             {/* Row 1: Blue Team */}
             <div className="grid grid-cols-7 gap-6 items-center mb-2">
               {/* Date Picker */}
-              <div className="relative flex items-center bg-[#181A20] rounded px-2 py-1">
-                <input
-                  type="date"
-                  className="bg-transparent text-white rounded w-full focus:outline-none pr-8"
-                  id="match-date-input"
-                  value={matchDate}
-                  onChange={(e) => setMatchDate(e.target.value)}
-                />
+              <div className="flex items-center gap-2">
+                <div className="relative flex items-center bg-[#181A20] rounded px-2 py-1 flex-1">
+                  <input
+                    type="date"
+                    className="bg-transparent text-white rounded w-full focus:outline-none pr-8"
+                    id="match-date-input"
+                    value={matchDate}
+                    onChange={(e) => setMatchDate(e.target.value)}
+                    max={getTodayDate()}
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-400 hover:text-blue-300 focus:outline-none"
+                    tabIndex={-1}
+                    aria-label="Pick date"
+                    onClick={() => document.getElementById('match-date-input').showPicker && document.getElementById('match-date-input').showPicker()}
+                  >
+                    {/* SVG calendar icon */}
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 7.5h16.5M4.5 21h15a.75.75 0 00.75-.75V6.75A2.25 2.25 0 0018 4.5H6A2.25 2.25 0 003.75 6.75v13.5c0 .414.336.75.75.75z" />
+                    </svg>
+                  </button>
+                </div>
                 <button
                   type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-blue-400 hover:text-blue-300 focus:outline-none"
-                  tabIndex={-1}
-                  aria-label="Pick date"
-                  onClick={() => document.getElementById('match-date-input').showPicker && document.getElementById('match-date-input').showPicker()}
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors"
+                  onClick={() => setMatchDate(getTodayDate())}
+                  title="Set to today's date"
                 >
-                  {/* SVG calendar icon */}
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 7.5h16.5M4.5 21h15a.75.75 0 00.75-.75V6.75A2.25 2.25 0 0018 4.5H6A2.25 2.25 0 003.75 6.75v13.5c0 .414.336.75.75.75z" />
-                  </svg>
+                  Today
                 </button>
               </div>
 
               {/* Winner Field */}
-              <input 
-                type="text" 
-                placeholder="Winner" 
-                className="bg-[#181A20] text-white rounded px-2 py-1 w-full focus:outline-none" 
-                id="winner-input"
-                value={winner}
-                onChange={(e) => setWinner(e.target.value)}
-              />
+              <div className="flex-1">
+                <input 
+                  type="text" 
+                  placeholder="Winner" 
+                  className={`bg-[#181A20] text-white rounded px-2 py-1 w-full focus:outline-none ${
+                    winner && actualCurrentTeamName && 
+                    winner !== actualCurrentTeamName && 
+                    winner !== blueTeam && 
+                    winner !== redTeam
+                      ? 'border-2 border-red-500' 
+                      : ''
+                  }`}
+                  id="winner-input"
+                  value={winner}
+                  onChange={(e) => setWinner(e.target.value)}
+                />
+              </div>
               {/* Blue Team */}
               <div className="flex items-center bg-[#181A20] rounded px-2 py-1">
                 <span className="mr-2 text-blue-400 text-lg">🔵</span>
-                <input 
-                  type="text" 
-                  placeholder="Blue Team" 
-                  className="bg-transparent text-white rounded focus:outline-none w-full" 
-                  id="blue-team-input"
-                  value={blueTeam}
-                  onChange={(e) => setBlueTeam(e.target.value)}
-                />
+                <div className="flex-1">
+                  <input 
+                    type="text" 
+                    placeholder="Blue Team" 
+                    className="bg-transparent text-white rounded focus:outline-none w-full"
+                    id="blue-team-input"
+                    value={blueTeam}
+                    onChange={(e) => setBlueTeam(e.target.value)}
+                  />
+                </div>
               </div>
               {/* Banning Phase 1 */}
               <button
@@ -1979,14 +2112,16 @@ export default function ExportModal({
               {/* Red Team - aligns with Team column */}
               <div className="flex items-center bg-[#181A20] rounded px-2 py-1">
                 <span className="mr-2 text-red-400 text-lg">🔴</span>
-                <input 
-                  type="text" 
-                  placeholder="Red Team" 
-                  className="bg-transparent text-white rounded focus:outline-none w-full" 
-                  id="red-team-input"
-                  value={redTeam}
-                  onChange={(e) => setRedTeam(e.target.value)}
-                />
+                <div className="flex-1">
+                  <input 
+                    type="text" 
+                    placeholder="Red Team" 
+                    className="bg-transparent text-white rounded focus:outline-none w-full" 
+                    id="red-team-input"
+                    value={redTeam}
+                    onChange={(e) => setRedTeam(e.target.value)}
+                  />
+                </div>
               </div>
               {/* Banning Phase 1 */}
               <button
@@ -2034,20 +2169,32 @@ export default function ExportModal({
                   <div className="flex items-center gap-2">
                     <span className="text-blue-400">🔵</span>
                     <input
-                      type="number"
+                      type="text"
                       placeholder="0"
                       value={turtleTakenBlue}
-                      onChange={(e) => setTurtleTakenBlue(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Only allow positive numbers and empty string
+                        if (value === '' || (!isNaN(value) && parseInt(value) >= 0)) {
+                          setTurtleTakenBlue(value);
+                        }
+                      }}
                       className="w-16 px-2 py-1 bg-[#181A20] text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
                     />
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-red-400">🔴</span>
                     <input
-                      type="number"
+                      type="text"
                       placeholder="0"
                       value={turtleTakenRed}
-                      onChange={(e) => setTurtleTakenRed(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Only allow positive numbers and empty string
+                        if (value === '' || (!isNaN(value) && parseInt(value) >= 0)) {
+                          setTurtleTakenRed(value);
+                        }
+                      }}
                       className="w-16 px-2 py-1 bg-[#181A20] text-white rounded focus:outline-none focus:ring-2 focus:ring-red-400"
                     />
                   </div>
@@ -2060,20 +2207,32 @@ export default function ExportModal({
                   <div className="flex items-center gap-2">
                     <span className="text-blue-400">🔵</span>
                     <input
-                      type="number"
+                      type="text"
                       placeholder="0"
                       value={lordTakenBlue}
-                      onChange={(e) => setLordTakenBlue(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Only allow positive numbers and empty string
+                        if (value === '' || (!isNaN(value) && parseInt(value) >= 0)) {
+                          setLordTakenBlue(value);
+                        }
+                      }}
                       className="w-16 px-2 py-1 bg-[#181A20] text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
                     />
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-red-400">🔴</span>
                     <input
-                      type="number"
+                      type="text"
                       placeholder="0"
                       value={lordTakenRed}
-                      onChange={(e) => setLordTakenRed(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Only allow positive numbers and empty string
+                        if (value === '' || (!isNaN(value) && parseInt(value) >= 0)) {
+                          setLordTakenRed(value);
+                        }
+                      }}
                       className="w-16 px-2 py-1 bg-[#181A20] text-white rounded focus:outline-none focus:ring-2 focus:ring-red-400"
                     />
                   </div>
@@ -2107,11 +2266,11 @@ export default function ExportModal({
             <div className="flex justify-end gap-4 pt-6">
               <button
                 type="button"
-                 onClick={() => {
-                   // Reset form data without closing modal
-                   setMatchDate('');
-                   setWinner('');
-                   setBlueTeam('');
+                                   onClick={() => {
+                    // Reset form data without closing modal
+                    setMatchDate(getTodayDate());
+                    setWinner('');
+                    setBlueTeam('');
                    setRedTeam('');
                    setBanning({
                      blue1: [], blue2: [], red1: [], red2: []
@@ -2138,7 +2297,13 @@ export default function ExportModal({
               <button
                 type="button"
                 onClick={handleConfirmWithSync}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={isExportDisabled()}
+                className={`px-6 py-2 rounded-lg transition-colors ${
+                  isExportDisabled() 
+                    ? 'bg-gray-500 text-gray-300 cursor-not-allowed' 
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+                title={isExportDisabled() ? `Requirements: One team name must match "${actualCurrentTeamName}" (case-sensitive), Results must be valid, Turtle/Lord taken must have values, and Complete Draft must be finished` : ''}
               >
                 {isEditing ? 'Update Match' : 'Export Match'}
               </button>
@@ -2204,7 +2369,6 @@ export default function ExportModal({
               <div className="flex-1 overflow-hidden">
 
                 <DraftBoard
-                  key={`draft-board-${JSON.stringify(laneAssignments)}`} // Force re-render when lane assignments change
                   currentStep={currentStep}
                   draftSteps={draftSteps}
                   draftFinished={draftFinished}
@@ -2224,6 +2388,7 @@ export default function ExportModal({
                   isCompleteDraft={true}
                   customLaneAssignments={laneAssignments}
                   onLaneReassign={handleLaneAssignment}
+                  onLaneSwap={handleLaneSwap}
                 />
               </div>
             </div>
@@ -2233,7 +2398,15 @@ export default function ExportModal({
 
       {/* Hero Picker Modal for Draft Slot Editing */}
       {selectedDraftSlot && (
-        <div className="fixed inset-0 z-[10003] flex items-center justify-center bg-black bg-opacity-80">
+        <div 
+          className="fixed inset-0 z-[10003] flex items-center justify-center bg-black bg-opacity-80"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setSelectedDraftSlot(null);
+              setDraftSlotSearch('');
+            }
+          }}
+        >
           <div className="modal-box w-full max-w-4xl bg-[#23232a] rounded-2xl shadow-2xl p-8">
             <h3 className="text-xl font-bold text-white mb-4">
               Select Hero for {selectedDraftSlot.team === 'blue' ? 'Blue' : 'Red'} Team {selectedDraftSlot.type === 'ban' ? 'Ban' : 'Pick'} (Slot {selectedDraftSlot.index + 1})
@@ -2267,7 +2440,7 @@ export default function ExportModal({
                   
                   // Filter out already banned/picked heroes
                   const bannedAndPickedHeroes = getAllBannedAndPickedHeroes();
-                  if (bannedAndPickedHeroes.includes(hero.name)) {
+                  if (bannedAndPickedHeroes.some(n => n?.toLowerCase() === hero.name.toLowerCase())) {
                     return false;
                   }
                   
@@ -2282,9 +2455,14 @@ export default function ExportModal({
                   >
                     <div className="w-16 h-16 rounded-full shadow-lg overflow-hidden flex items-center justify-center mb-2 bg-gradient-to-b from-blue-900 to-blue-700">
                       <img
-                        src={`/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
+                        src={`${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/hero-image/${hero.role?.trim().toLowerCase()}/${encodeURIComponent(hero.image)}`}
                         alt={hero.name}
                         className="w-full h-full object-cover rounded-full"
+                        onError={(e) => {
+                          console.log(`Failed to load image for ${hero.name}:`, e.target.src);
+                          // Fallback to direct API if proxy fails
+                          e.target.src = `https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`;
+                        }}
                       />
                     </div>
                     <span className="text-sm font-semibold text-center w-20 truncate">
@@ -2295,6 +2473,20 @@ export default function ExportModal({
             </div>
             
             <div className="flex justify-end gap-4">
+              <button
+                type="button"
+                className="btn bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-semibold"
+                onClick={() => {
+                  // Remove the hero from the slot
+                  if (selectedDraftSlot) {
+                    handleHeroRemove(selectedDraftSlot.type, selectedDraftSlot.team, selectedDraftSlot.index);
+                  }
+                  setSelectedDraftSlot(null);
+                  setDraftSlotSearch('');
+                }}
+              >
+                Remove
+              </button>
               <button
                 type="button"
                 className="btn bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg font-semibold"

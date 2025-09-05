@@ -28,6 +28,7 @@ const LANE_LABELS = {
 export default function LaneSelector({ 
   currentLane, 
   onLaneSelect, 
+  onLaneSwap,
   availableLanes, 
   team, 
   slotIndex,
@@ -37,6 +38,8 @@ export default function LaneSelector({
   teamLanes = {} // Object containing all team lane selections: {0: 'exp', 1: 'jungler', etc.}
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const dropdownRef = useRef(null);
   
   // Create a unique ID for this dropdown instance
@@ -54,6 +57,88 @@ export default function LaneSelector({
     }
     setIsOpen(false);
     globalOpenDropdownId = null;
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e) => {
+    if (!currentLane) {
+      e.preventDefault();
+      return; // Can't drag if no lane is assigned
+    }
+    
+    console.log('Drag started for lane:', currentLane, 'at slot:', slotIndex, 'team:', team);
+    
+    e.dataTransfer.setData('text/plain', JSON.stringify({
+      team,
+      slotIndex,
+      lane: currentLane
+    }));
+    e.dataTransfer.effectAllowed = 'move';
+    setIsDragging(true);
+    
+    // Create a custom drag image
+    const dragImage = e.target.cloneNode(true);
+    dragImage.style.transform = 'rotate(5deg)';
+    dragImage.style.opacity = '0.8';
+    dragImage.style.position = 'absolute';
+    dragImage.style.top = '-1000px';
+    dragImage.style.left = '-1000px';
+    document.body.appendChild(dragImage);
+    e.dataTransfer.setDragImage(dragImage, 24, 24);
+    
+    // Clean up the drag image after a short delay
+    setTimeout(() => {
+      if (document.body.contains(dragImage)) {
+        document.body.removeChild(dragImage);
+      }
+    }, 0);
+  };
+
+  const handleDragEnd = () => {
+    setIsDragging(false);
+    setDragOver(false);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOver(true);
+    console.log('Drag over lane at slot:', slotIndex, 'team:', team);
+  };
+
+  const handleDragLeave = (e) => {
+    // Only set dragOver to false if we're actually leaving the element
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      setDragOver(false);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    
+    console.log('Drop event triggered at slot:', slotIndex, 'team:', team);
+    
+    try {
+      const dragData = JSON.parse(e.dataTransfer.getData('text/plain'));
+      const { team: sourceTeam, slotIndex: sourceSlotIndex } = dragData;
+      
+      console.log('Drop data:', dragData);
+      
+      // Only allow swapping within the same team
+      if (sourceTeam === team && sourceSlotIndex !== slotIndex) {
+        console.log(`LaneSelector: Dropping lane from slot ${sourceSlotIndex} to slot ${slotIndex} for ${team} team`);
+        if (onLaneSwap) {
+          onLaneSwap(team, sourceSlotIndex, slotIndex);
+        } else {
+          console.log('onLaneSwap function not provided');
+        }
+      } else {
+        console.log('Invalid drop: different team or same slot');
+      }
+    } catch (error) {
+      console.error('Error parsing drag data:', error);
+    }
   };
 
   const toggleDropdown = (e) => {
@@ -119,41 +204,55 @@ export default function LaneSelector({
   return (
     <>
       <div className="relative z-[9999] flex items-center gap-1" ref={dropdownRef}>
-              {/* Lane icon or Fill icon - clickable */}
+              {/* Lane icon or Fill icon - clickable and draggable */}
       {currentLane ? (
         <img
           src={LANE_ICONS[currentLane]}
           alt={`${currentLane} lane`}
-          className={`${size} cursor-pointer hover:scale-110 transition-transform duration-200 object-contain`}
-          draggable={false}
+          className={`${size} cursor-pointer hover:scale-110 transition-all duration-200 object-contain ${
+            isDragging ? 'opacity-50 scale-95' : ''
+          } ${
+            dragOver ? 'ring-2 ring-blue-400 ring-opacity-75 scale-110' : ''
+          }`}
+          draggable={true}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
           onMouseDown={(e) => {
             e.stopPropagation();
-            e.preventDefault();
+            // Don't prevent default to allow drag to work
           }}
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
             toggleDropdown(e);
           }}
-          title={`Click to change lane (currently ${LANE_LABELS[currentLane]})`}
+          title={`Click to change lane or drag to swap with another lane (currently ${LANE_LABELS[currentLane]})`}
           style={{ pointerEvents: 'auto' }}
         />
       ) : (
         <img
           src={fillIcon}
           alt="Select lane"
-          className={`${size} cursor-pointer hover:scale-110 transition-transform duration-200 object-contain`}
+          className={`${size} cursor-pointer hover:scale-110 transition-all duration-200 object-contain ${
+            dragOver ? 'ring-2 ring-blue-400 ring-opacity-75 scale-110' : ''
+          }`}
           draggable={false}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
           onMouseDown={(e) => {
             e.stopPropagation();
-            e.preventDefault();
+            // Don't prevent default to allow drag to work
           }}
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
             toggleDropdown(e);
           }}
-          title="Click to assign a lane"
+          title="Click to assign a lane or drop a lane here to swap"
           style={{ pointerEvents: 'auto' }}
         />
       )}

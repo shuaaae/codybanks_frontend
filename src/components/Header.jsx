@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { FaSignOutAlt } from 'react-icons/fa';
 import mobaImg from '../assets/moba1.png';
 import { setHeaderNavigation } from '../App';
+import userService from '../utils/userService';
 
 const Header = ({
   currentUser,
@@ -20,6 +21,32 @@ const Header = ({
   
   // Ensure currentUser is a valid object
   const safeUser = currentUser && typeof currentUser === 'object' ? currentUser : null;
+  
+  // State for user photo URL
+  const [userPhotoUrl, setUserPhotoUrl] = useState(null);
+  
+  // Fetch user photo from database when component mounts or user changes
+  useEffect(() => {
+    const fetchUserPhoto = async () => {
+      if (safeUser && safeUser.id) {
+        try {
+          const result = await userService.getCurrentUserWithPhoto();
+          if (result.success && result.user.photo) {
+            const photoUrl = userService.getUserPhotoUrl(result.user);
+            setUserPhotoUrl(photoUrl);
+          }
+        } catch (error) {
+          console.error('Error fetching user photo:', error);
+          // Fallback to localStorage photo if available
+          if (safeUser.photo) {
+            setUserPhotoUrl(safeUser.photo);
+          }
+        }
+      }
+    };
+
+    fetchUserPhoto();
+  }, [safeUser]);
   
   const navigate = useNavigate();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
@@ -144,10 +171,27 @@ const Header = ({
       <div className="relative user-dropdown" style={{ zIndex: 1000 }}>
         <button
           onClick={() => setShowUserDropdown(!showUserDropdown)}
-          className="w-10 h-10 hidden md:flex rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white transition-all duration-200 hover:scale-105 shadow-lg"
+          className="w-10 h-10 hidden md:flex rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white transition-all duration-200 hover:scale-105 shadow-lg overflow-hidden"
         >
-          {/* Square Avatar with Black and White Icon */}
-          <svg className="w-6 h-6" fill="white" stroke="black" strokeWidth="1" viewBox="0 0 24 24">
+          {/* User Photo or Default Icon */}
+          {userPhotoUrl ? (
+            <img 
+              src={userPhotoUrl} 
+              alt="Profile" 
+              className="w-10 h-10 rounded-full object-cover"
+              onError={(e) => {
+                e.target.style.display = 'none';
+                e.target.nextSibling.style.display = 'block';
+              }}
+            />
+          ) : null}
+          <svg 
+            className={`w-6 h-6 ${userPhotoUrl ? 'hidden' : 'block'}`} 
+            fill="white" 
+            stroke="black" 
+            strokeWidth="1" 
+            viewBox="0 0 24 24"
+          >
             <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
           </svg>
         </button>
@@ -157,19 +201,12 @@ const Header = ({
           <div className="absolute hidden md:block right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50" style={{ minWidth: '200px', zIndex: 1001 }}>
             {/* User Info Section */}
             <div className="px-4 py-3 border-b border-gray-600">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-0">
-                  <svg className="w-6 h-6" fill="white" stroke="black" strokeWidth="1" viewBox="0 0 24 24">
-                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                  </svg>
+              <div>
+                <div className="text-white font-medium text-sm">
+                  {safeUser?.name || safeUser?.username || (safeUser?.email && safeUser.email.includes('@') ? safeUser.email.split('@')[0] : 'User')}
                 </div>
-                <div>
-                  <div className="text-white font-medium text-sm">
-                    {safeUser?.name || safeUser?.username || (safeUser?.email && safeUser.email.includes('@') ? safeUser.email.split('@')[0] : 'User')}
-                  </div>
-                  <div className="text-gray-400 text-xs">
-                    {safeUser?.email || safeUser?.username || 'user@example.com'}
-                  </div>
+                <div className="text-gray-400 text-xs">
+                  {safeUser?.email || safeUser?.username || 'user@example.com'}
                 </div>
               </div>
             </div>

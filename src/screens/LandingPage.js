@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import mainBg from '../assets/mainbg.jpg';
 import aboutBg from '../assets/aboutbg.jpg';
 import PageTitle from '../components/PageTitle';
 import { safelyActivateTeam } from '../utils/teamUtils';
+import { buildApiUrl } from '../config/api';
+import deviceManager from '../utils/deviceManager';
 import {
   Header,
   HeroSection,
@@ -14,9 +16,11 @@ import {
   DeleteConfirmModal,
   ErrorModal
 } from '../components/LandingPage';
+import LoginSuccessModal from '../components/LandingPage/LoginSuccessModal';
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const validationTimeoutRef = useRef(null);
   const [hoveredBtn, setHoveredBtn] = useState(null);
   const [showAddTeamModal, setShowAddTeamModal] = useState(false);
   const [showTeamPickerModal, setShowTeamPickerModal] = useState(false);
@@ -46,6 +50,8 @@ export default function LandingPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [errorTitle, setErrorTitle] = useState("Error");
   const [showCleanupOption, setShowCleanupOption] = useState(false);
+  const [showLoginSuccessModal, setShowLoginSuccessModal] = useState(false);
+  const [loggedInUserName, setLoggedInUserName] = useState("");
   const laneRoles = [
     { key: 'exp', label: 'Exp Lane' },
     { key: 'mid', label: 'Mid Lane' },
@@ -81,16 +87,26 @@ export default function LandingPage() {
     setTeamName(newName);
     setTeamNameError(""); // Clear error when user starts typing
     
+    // Clear any existing timeout
+    if (validationTimeoutRef.current) {
+      clearTimeout(validationTimeoutRef.current);
+    }
+    
     // Only check if name is not empty and has at least 2 characters
     if (newName.trim().length >= 2) {
       setIsValidatingName(true);
       // Add a small delay to avoid too many API calls
-      setTimeout(async () => {
-        if (newName === teamName) { // Only check if name hasn't changed
+      validationTimeoutRef.current = setTimeout(async () => {
+        try {
           const nameCheck = await checkTeamNameExists(newName);
+          // Always stop loading and update error state
           if (nameCheck.exists) {
             setTeamNameError(nameCheck.message);
           }
+          setIsValidatingName(false);
+        } catch (error) {
+          console.error('Error validating team name:', error);
+          // Always stop loading on error
           setIsValidatingName(false);
         }
       }, 500);
@@ -151,10 +167,9 @@ export default function LandingPage() {
   };
 
   const handleAddPlayer = () => {
-    // Add a new player with a default role (first available role that's not taken)
-    const usedRoles = players.map(p => p.role).filter(role => role.trim() !== '');
-    const availableRoles = defaultRoles.filter(role => !usedRoles.includes(role));
-    const defaultRole = availableRoles.length > 0 ? availableRoles[0] : 'sub';
+    // Allow multiple players with the same role - default to first role
+    // Users can change the role in the dropdown if they want duplicates
+    const defaultRole = defaultRoles[0] || 'sub';
     
     setPlayers([...players, { role: defaultRole, name: "" }]);
   };
@@ -175,7 +190,7 @@ export default function LandingPage() {
 
   const handleLogout = () => {
     // Clear active team when logging out
-    fetch('/api/teams/set-active', {
+    fetch(buildApiUrl('/teams/set-active'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -208,6 +223,11 @@ export default function LandingPage() {
     setShowPassword(false);
   };
 
+  const handleCloseLoginSuccessModal = () => {
+    setShowLoginSuccessModal(false);
+    setLoggedInUserName('');
+  };
+
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
   };
@@ -219,7 +239,9 @@ export default function LandingPage() {
 
     try {
       console.log('Attempting login with:', { email: loginEmail });
-              const response = await fetch('/api/auth/login', {
+      const loginUrl = buildApiUrl('/auth/login');
+      console.log('Login URL:', loginUrl);
+              const response = await fetch(loginUrl, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -260,12 +282,18 @@ export default function LandingPage() {
       // Update login state
       setIsLoggedIn(true);
       
-      // Close modal and clear form
+      // Set user name for success modal
+      setLoggedInUserName(data.user.name || data.user.email || 'Coach');
+      
+      // Close login modal and show success modal
       setShowLoginModal(false);
+      setShowLoginSuccessModal(true);
+      
+      // Clear form
       setLoginEmail('');
       setLoginPassword('');
       
-      console.log('Login successful, staying on landing page');
+      console.log('Login successful, showing success modal');
       
     } catch (error) {
       console.error('Login error:', error);
@@ -340,7 +368,7 @@ export default function LandingPage() {
   useEffect(() => {
     const testApiConnection = async () => {
       try {
-        const response = await fetch('/api/test');
+        const response = await fetch(buildApiUrl('/test'));
         if (!response.ok) {
           console.error('API connection failed:', response.status);
         }
@@ -356,15 +384,32 @@ export default function LandingPage() {
   useEffect(() => {
     const loadActiveTeam = async () => {
       try {
-        const response = await fetch('/api/teams/active');
+        // First check if any teams exist
+        const checkResponse = await fetch(buildApiUrl('/teams/check-exists'));
+        if (checkResponse.ok) {
+          const checkData = await checkResponse.json();
+          
+          if (!checkData.has_teams) {
+            console.log('No teams found, skipping active team fetch');
+            localStorage.removeItem('latestTeam');
+            setActiveTeam(null);
+            return;
+          }
+        }
+        
+        // If teams exist, try to get the active team
+        const response = await fetch(buildApiUrl('/teams/active'));
         if (response.ok) {
           const activeTeamData = await response.json();
-          setActiveTeam(activeTeamData);
-        } else if (response.status === 404) {
-          // 404 is expected when no active team exists
-          console.log('No active team found (expected)');
-          localStorage.removeItem('latestTeam');
-          setActiveTeam(null);
+          
+          // Check if we have a valid team or if it's the "no teams" response
+          if (activeTeamData.has_teams === false || !activeTeamData.id) {
+            console.log('No active team found (expected)');
+            localStorage.removeItem('latestTeam');
+            setActiveTeam(null);
+          } else {
+            setActiveTeam(activeTeamData);
+          }
         } else {
           console.log('Unexpected error loading active team:', response.status);
           localStorage.removeItem('latestTeam');
@@ -380,7 +425,7 @@ export default function LandingPage() {
     const fetchTeams = async () => {
       setLoadingTeams(true);
       try {
-        const response = await fetch('/api/teams');
+        const response = await fetch(buildApiUrl('/teams'));
         if (response.ok) {
           const teamsData = await response.json();
           setTeams(teamsData);
@@ -399,7 +444,7 @@ export default function LandingPage() {
   // Clear active team when entering LandingPage (user is no longer in a team)
   useEffect(() => {
     // Clear active team when user returns to landing page
-    fetch('/api/teams/set-active', {
+    fetch(buildApiUrl('/teams/set-active'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -420,15 +465,31 @@ export default function LandingPage() {
       oldValue: null
     }));
   }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (validationTimeoutRef.current) {
+        clearTimeout(validationTimeoutRef.current);
+      }
+    };
+  }, []);
   
   // const handleContinueWithCurrentTeam = () => {} // removed (unused)
 
-  const handleSwitchOrAddTeam = () => {
+  const handleSwitchOrAddTeam = async () => {
     if (!isLoggedIn) {
       setShowLoginModal(true);
       return;
     }
     
+    // If teams are still loading, wait for them to load
+    if (loadingTeams) {
+      // Show a brief loading state or wait
+      return;
+    }
+    
+    // If no teams found after loading, show add team modal
     if (teams.length === 0) {
       setShowAddTeamModal(true);
     } else {
@@ -450,8 +511,11 @@ export default function LandingPage() {
       setIsOpeningTeam(true);
       setOpeningTeamName(selectedTeam.name);
       
+      // Get device information
+      const deviceInfo = deviceManager.getDeviceInfoForAPI();
+      
       // First check if team is available
-      const availabilityResponse = await fetch('/api/teams/check-availability', {
+      const availabilityResponse = await fetch(buildApiUrl('/teams/check-availability'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -496,7 +560,7 @@ export default function LandingPage() {
       console.log('Calling safelyActivateTeam for team ID:', teamId);
       
       try {
-        const activationSuccess = await safelyActivateTeam(teamId);
+        const activationSuccess = await safelyActivateTeam(teamId, deviceInfo);
         console.log('safelyActivateTeam result:', activationSuccess);
 
         if (activationSuccess) {
@@ -547,7 +611,7 @@ export default function LandingPage() {
     }
 
     try {
-      const response = await fetch('/api/teams/check-name', {
+      const response = await fetch(buildApiUrl('/teams/check-name'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -574,6 +638,12 @@ export default function LandingPage() {
     // Clear any previous errors
     setTeamNameError("");
     
+    // Validate that a team logo is uploaded
+    if (!teamLogoFile) {
+      setTeamNameError("Please upload a team logo before creating your team.");
+      return;
+    }
+    
     // Validate that all players have names and roles
     const invalidPlayers = players.filter(player => !player.name.trim() || !player.role.trim());
     if (invalidPlayers.length > 0) {
@@ -597,7 +667,7 @@ export default function LandingPage() {
         const formData = new FormData();
         formData.append('logo', teamLogoFile);
         
-        const uploadResponse = await fetch('/api/teams/upload-logo', {
+        const uploadResponse = await fetch(buildApiUrl('/teams/upload-logo'), {
           method: 'POST',
           body: formData,
         });
@@ -621,7 +691,7 @@ export default function LandingPage() {
       
       console.log('Normalized players data:', normalizedPlayers);
       
-      const response = await fetch('/api/teams', {
+      const response = await fetch(buildApiUrl('/teams'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -644,8 +714,11 @@ export default function LandingPage() {
         }
         
         try {
+          // Get device information for new team activation
+          const deviceInfo = deviceManager.getDeviceInfoForAPI();
+          
           // Use safelyActivateTeam for the new team
-          const activationSuccess = await safelyActivateTeam(newTeam.id);
+          const activationSuccess = await safelyActivateTeam(newTeam.id, deviceInfo);
           
           if (activationSuccess) {
             console.log('New team activated successfully:', newTeam.name);
@@ -714,7 +787,7 @@ export default function LandingPage() {
     
     setIsDeletingTeam(true);
     try {
-              const response = await fetch(`/api/teams/${teamToDelete.id}`, {
+              const response = await fetch(buildApiUrl(`/teams/${teamToDelete.id}`), {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -772,7 +845,7 @@ export default function LandingPage() {
   // Force cleanup all active sessions (useful when teams get stuck)
   const forceCleanupSessions = async () => {
     try {
-      const response = await fetch('/api/teams/force-cleanup-sessions', {
+      const response = await fetch(buildApiUrl('/teams/force-cleanup-sessions'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -851,6 +924,7 @@ export default function LandingPage() {
           setHoveredBtn={setHoveredBtn}
           onSwitchOrAddTeam={handleSwitchOrAddTeam}
           onAddTeam={handleAddTeam}
+          loadingTeams={loadingTeams}
         />
       </section>
 
@@ -987,6 +1061,12 @@ export default function LandingPage() {
         showPassword={showPassword}
         togglePasswordVisibility={togglePasswordVisibility}
         handleLogin={handleLogin}
+      />
+
+      <LoginSuccessModal
+        isOpen={showLoginSuccessModal}
+        onClose={handleCloseLoginSuccessModal}
+        userName={loggedInUserName}
       />
 
       <SignupModal

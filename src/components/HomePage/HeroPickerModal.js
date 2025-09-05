@@ -237,7 +237,7 @@ export default function HeroPickerModal({
                   style={!isUnavailable ? { background: 'linear-gradient(180deg, #1e3a8a 0%, #1e40af 100%)' } : {}}
                 >
                   <HeroImage
-                    src={`/heroes/${String(hero.role).toLowerCase()}/${hero.image}`}
+                    src={`https://api.coachdatastatistics.site/heroes/${String(hero.role).toLowerCase()}/${hero.image}`}
                     alt={hero.name}
                   />
                   {isBanned && (

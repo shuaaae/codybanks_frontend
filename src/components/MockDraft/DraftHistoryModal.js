@@ -5,14 +5,42 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
   const [selectedDraft, setSelectedDraft] = useState(null);
   const [isImageExpanded, setIsImageExpanded] = useState(false);
   const [isImageClosing, setIsImageClosing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Load saved drafts from localStorage
+  // Load saved drafts from database
   useEffect(() => {
     if (isOpen) {
-      const drafts = JSON.parse(localStorage.getItem('savedDrafts') || '[]');
-      setSavedDrafts(drafts);
+      fetchDrafts();
     }
   }, [isOpen]);
+
+  const fetchDrafts = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Get current user ID from localStorage
+      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+      if (!currentUser.id) {
+        setError('User not logged in');
+        return;
+      }
+
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/drafts?user_id=${currentUser.id}`);
+      const result = await response.json();
+      
+      if (result.success) {
+        setSavedDrafts(result.drafts);
+      } else {
+        setError(result.message || 'Failed to fetch drafts');
+      }
+    } catch (err) {
+      setError('Failed to fetch drafts: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Handle draft selection
   const handleDraftSelect = (draft) => {
@@ -20,14 +48,31 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
   };
 
   // Handle draft deletion
-  const handleDeleteDraft = (draftId) => {
-    const updatedDrafts = savedDrafts.filter(draft => draft.id !== draftId);
-    setSavedDrafts(updatedDrafts);
-    localStorage.setItem('savedDrafts', JSON.stringify(updatedDrafts));
-    
-    // Clear selected draft if it was deleted
-    if (selectedDraft && selectedDraft.id === draftId) {
-      setSelectedDraft(null);
+  const handleDeleteDraft = async (draftId) => {
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/drafts/${draftId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ user_id: JSON.parse(localStorage.getItem('currentUser') || '{}').id })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        const updatedDrafts = savedDrafts.filter(draft => draft.id !== draftId);
+        setSavedDrafts(updatedDrafts);
+        
+        // Clear selected draft if it was deleted
+        if (selectedDraft && selectedDraft.id === draftId) {
+          setSelectedDraft(null);
+        }
+      } else {
+        alert('Failed to delete draft: ' + result.message);
+      }
+    } catch (err) {
+      alert('Failed to delete draft: ' + err.message);
     }
   };
 
@@ -53,6 +98,21 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
       setIsImageExpanded(false);
       setIsImageClosing(false);
     }, 300); // Match animation duration
+  };
+
+  // Handle download draft image
+  const handleDownloadDraft = (draft) => {
+    if (draft.image_url) {
+      const link = document.createElement('a');
+      // Use PNG extension to match the PNG data format
+      link.download = `draft-${draft.blue_team_name}-vs-${draft.red_team_name}-${new Date(draft.created_at).toISOString().split('T')[0]}.png`;
+      link.href = draft.image_url;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      alert('No image data available for this draft.');
+    }
   };
 
   if (!isOpen) return null;
@@ -121,7 +181,22 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
           <div className="w-1/3 flex flex-col">
             <h3 className="text-lg font-semibold text-white mb-4">Saved Drafts</h3>
             <div className="flex-1 overflow-y-auto space-y-2">
-              {savedDrafts.length === 0 ? (
+              {loading ? (
+                <div className="text-gray-400 text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
+                  Loading drafts...
+                </div>
+              ) : error ? (
+                <div className="text-red-400 text-center py-8">
+                  {error}
+                  <button 
+                    onClick={fetchDrafts}
+                    className="block mt-2 text-blue-400 hover:text-blue-300"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : savedDrafts.length === 0 ? (
                 <div className="text-gray-400 text-center py-8">
                   No saved drafts yet
                 </div>
@@ -137,14 +212,14 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
                     onClick={() => handleDraftSelect(draft)}
                   >
                     <div className="text-white font-semibold mb-2">
-                      {draft.blueTeamName || 'Blue Team'} vs {draft.redTeamName || 'Red Team'}
+                      {draft.blue_team_name || 'Blue Team'} vs {draft.red_team_name || 'Red Team'}
                     </div>
                     <div className="text-gray-300 text-sm mb-2">
-                      {new Date(draft.timestamp).toLocaleDateString()} at {new Date(draft.timestamp).toLocaleTimeString()}
+                      {new Date(draft.created_at).toLocaleDateString()} at {new Date(draft.created_at).toLocaleTimeString()}
                     </div>
                     <div className="flex justify-between items-center">
                       <div className="text-gray-400 text-xs">
-                        {draft.bluePicks?.length || 0} picks, {draft.blueBans?.length || 0} bans
+                        {draft.blue_picks?.length || 0} picks, {draft.blue_bans?.length || 0} bans
                       </div>
                       <button
                         onClick={(e) => {
@@ -169,10 +244,10 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
               {selectedDraft ? (
                 <div className="space-y-4">
                                      {/* Draft Image */}
-                   {selectedDraft.imageData && (
+                   {selectedDraft.image_url && (
                      <div className="mb-4 relative group">
                        <img
-                         src={selectedDraft.imageData}
+                         src={selectedDraft.image_url}
                          alt="Draft Preview"
                          className="max-w-full h-auto rounded-lg border border-gray-600 cursor-pointer transition-all duration-200"
                          onClick={handleImageExpand}
@@ -197,18 +272,39 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
                            </svg>
                          </div>
                        </div>
+                       {/* Download Button */}
+                       <button
+                         onClick={() => handleDownloadDraft(selectedDraft)}
+                         className="absolute top-2 right-2 bg-green-600 hover:bg-green-700 text-white p-2 rounded-full transition-colors duration-200 shadow-lg"
+                         title="Download Draft Image"
+                       >
+                         <svg 
+                           width="20" 
+                           height="20" 
+                           viewBox="0 0 24 24" 
+                           fill="none" 
+                           stroke="white" 
+                           strokeWidth="2" 
+                           strokeLinecap="round" 
+                           strokeLinejoin="round"
+                         >
+                           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                           <polyline points="7,10 12,15 17,10"/>
+                           <line x1="12" y1="15" x2="12" y2="3"/>
+                         </svg>
+                       </button>
                      </div>
                    )}
                   
                   {/* Draft Details */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <h4 className="text-white font-semibold mb-2">Blue Team ({selectedDraft.blueTeamName || 'Blue Team'})</h4>
+                      <h4 className="text-white font-semibold mb-2">Blue Team ({selectedDraft.blue_team_name || 'Blue Team'})</h4>
                       <div className="space-y-2">
                         <div>
                           <span className="text-gray-400 text-sm">Picks:</span>
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {selectedDraft.bluePicks?.map((hero, index) => (
+                            {selectedDraft.blue_picks?.map((hero, index) => (
                               <span key={index} className="bg-blue-600 text-white px-2 py-1 rounded text-xs">
                                 {hero?.name || 'Empty'}
                               </span>
@@ -218,7 +314,7 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
                         <div>
                           <span className="text-gray-400 text-sm">Bans:</span>
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {selectedDraft.blueBans?.map((hero, index) => (
+                            {selectedDraft.blue_bans?.map((hero, index) => (
                               <span key={index} className="bg-red-600 text-white px-2 py-1 rounded text-xs">
                                 {hero?.name || 'Empty'}
                               </span>
@@ -229,12 +325,12 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
                     </div>
                     
                     <div>
-                      <h4 className="text-white font-semibold mb-2">Red Team ({selectedDraft.redTeamName || 'Red Team'})</h4>
+                      <h4 className="text-white font-semibold mb-2">Red Team ({selectedDraft.red_team_name || 'Red Team'})</h4>
                       <div className="space-y-2">
                         <div>
                           <span className="text-gray-400 text-sm">Picks:</span>
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {selectedDraft.redPicks?.map((hero, index) => (
+                            {selectedDraft.red_picks?.map((hero, index) => (
                               <span key={index} className="bg-red-500 text-white px-2 py-1 rounded text-xs">
                                 {hero?.name || 'Empty'}
                               </span>
@@ -244,7 +340,7 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
                         <div>
                           <span className="text-gray-400 text-sm">Bans:</span>
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {selectedDraft.redBans?.map((hero, index) => (
+                            {selectedDraft.red_bans?.map((hero, index) => (
                               <span key={index} className="bg-red-600 text-white px-2 py-1 rounded text-xs">
                                 {hero?.name || 'Empty'}
                               </span>
@@ -266,7 +362,7 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
        </div>
        
        {/* Expanded Image Modal */}
-       {isImageExpanded && selectedDraft?.imageData && (
+       {isImageExpanded && selectedDraft?.image_url && (
          <div className={`fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[999999] ${isImageClosing ? 'animate-fadeOut' : 'animate-fadeIn'}`}>
            <div className={`relative max-w-[80vw] max-h-[80vh] flex items-center justify-center ${isImageClosing ? 'animate-scaleOut' : 'animate-scaleIn'}`}>
              <button
@@ -283,8 +379,28 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
                  <path d="M18.3 5.71c-.39-.39-1.02-.39-1.41 0L12 10.59 7.11 5.7c-.39-.39-1.02-.39-1.41 0-.39.39-.39 1.02 0 1.41L10.59 12 5.7 16.89c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L12 13.41l4.89 4.88c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z"/>
                </svg>
              </button>
+             <button
+               onClick={() => handleDownloadDraft(selectedDraft)}
+               className="absolute -top-12 right-16 bg-green-600 hover:bg-green-700 text-white p-2 rounded-full transition-colors duration-200 z-10 shadow-lg"
+               title="Download Draft Image"
+             >
+               <svg 
+                 width="24" 
+                 height="24" 
+                 viewBox="0 0 24 24" 
+                 fill="none" 
+                 stroke="white" 
+                 strokeWidth="2" 
+                 strokeLinecap="round" 
+                 strokeLinejoin="round"
+               >
+                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                 <polyline points="7,10 12,15 17,10"/>
+                 <line x1="12" y1="15" x2="12" y2="3"/>
+               </svg>
+             </button>
              <img
-               src={selectedDraft.imageData}
+               src={selectedDraft.image_url}
                alt="Draft Preview - Full Size"
                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl border border-gray-600"
              />

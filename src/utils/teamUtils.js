@@ -2,6 +2,8 @@
  * Utility functions for managing team activation
  */
 
+import { buildApiUrl } from '../config/api';
+
 // Simple debounce mechanism to prevent rapid successive calls
 let lastActivationTime = 0;
 const ACTIVATION_COOLDOWN = 1000; // 1 second cooldown
@@ -9,9 +11,10 @@ const ACTIVATION_COOLDOWN = 1000; // 1 second cooldown
 /**
  * Safely activates a team by checking if it's already active first
  * @param {number} teamId - The ID of the team to activate
+ * @param {Object} deviceInfo - Device information for multi-device support
  * @returns {Promise<boolean>} - True if team is active, false otherwise
  */
-export const safelyActivateTeam = async (teamId) => {
+export const safelyActivateTeam = async (teamId, deviceInfo = {}) => {
   try {
     // Check if we're within the cooldown period
     const now = Date.now();
@@ -20,17 +23,23 @@ export const safelyActivateTeam = async (teamId) => {
       return true; // Assume success to prevent errors
     }
     
-    console.log('Setting team as active:', teamId);
+    console.log('Setting team as active:', teamId, 'with device info:', deviceInfo);
     lastActivationTime = now; // Update the last activation time
+    
+    // Prepare request body with device information
+    const requestBody = { 
+      team_id: teamId,
+      ...deviceInfo
+    };
     
     // Simplified: Just call the set-active endpoint directly
     console.log('Making request to /api/teams/set-active');
-    const setActiveResponse = await fetch('/api/teams/set-active', {
+    const setActiveResponse = await fetch(buildApiUrl('/teams/set-active'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ team_id: teamId }),
+      body: JSON.stringify(requestBody),
     });
     
     console.log('Response status:', setActiveResponse.status);
@@ -59,7 +68,7 @@ export const safelyActivateTeam = async (teamId) => {
  */
 export const isTeamActive = async (teamId) => {
   try {
-    const response = await fetch('/api/teams/active');
+    const response = await fetch(buildApiUrl('/teams/active'));
     if (response.ok) {
       const activeTeam = await response.json();
       return activeTeam.id === teamId;
@@ -77,7 +86,7 @@ export const isTeamActive = async (teamId) => {
  */
 export const clearActiveTeam = async () => {
   try {
-    const response = await fetch('/api/teams/set-active', {
+    const response = await fetch(buildApiUrl('/teams/set-active'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

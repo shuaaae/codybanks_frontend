@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import mainBg from '../assets/mainbg.jpg';
 import PageTitle from '../components/PageTitle';
+import { buildApiUrl } from '../config/api';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -45,7 +46,7 @@ export default function AdminLogin() {
     setError('');
 
     try {
-              const response = await fetch('/api/auth/login', {
+              const response = await fetch(buildApiUrl('/auth/login'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

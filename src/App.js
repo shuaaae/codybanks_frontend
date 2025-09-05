@@ -1,5 +1,6 @@
 import './App.css';
 import React, { useState, useEffect } from 'react';
+import { buildApiUrl } from './config/api';
 import LoadingScreen from './screens/loadingScreen';
 import HomePage from './screens/HomePage';
 import LandingPage from './screens/LandingPage';
@@ -62,7 +63,7 @@ export const getHeroData = async () => {
   console.log('Fetching hero data from API...');
 
   try {
-    const response = await fetch('/api/heroes');
+    const response = await fetch(buildApiUrl('/heroes'));
     const data = await response.json();
     
     // Cache the data
@@ -111,7 +112,7 @@ export const getMatchesData = async (teamId = null, matchType = 'scrim') => {
   console.log('Fetching matches data from API for:', cacheKey);
 
   try {
-    const url = teamId ? `/api/matches?team_id=${teamId}&match_type=${matchType}` : `/api/matches?match_type=${matchType}`;
+    const url = teamId ? buildApiUrl(`/matches?team_id=${teamId}&match_type=${matchType}`) : buildApiUrl(`/matches?match_type=${matchType}`);
     
     // Prepare headers with team ID for backend compatibility
     const headers = {

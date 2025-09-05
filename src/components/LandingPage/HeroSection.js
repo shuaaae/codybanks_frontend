@@ -5,9 +5,19 @@ export default function HeroSection({
   hoveredBtn, 
   setHoveredBtn, 
   onSwitchOrAddTeam, 
-  onAddTeam 
+  onAddTeam,
+  loadingTeams = false
 }) {
   return (
+    <>
+      <style>
+        {`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}
+      </style>
     <main style={{
       flex: 1,
       display: 'flex',
@@ -69,18 +79,34 @@ export default function HeroSection({
               borderRadius: 12,
               border: `2px solid ${hoveredBtn === 'switchteam' ? '#3b82f6' : 'transparent'}`,
               boxShadow: '0 4px 24px rgba(59, 130, 246, 0.3)',
-              cursor: 'pointer',
+              cursor: loadingTeams ? 'wait' : 'pointer',
               letterSpacing: 1,
               textTransform: 'uppercase',
               transition: 'all 0.25s ease',
               textShadow: '0 2px 8px rgba(0,0,0,0.5)',
               minWidth: 200,
+              opacity: loadingTeams ? 0.7 : 1,
             }}
             onClick={onSwitchOrAddTeam}
-            onMouseEnter={() => setHoveredBtn('switchteam')}
+            onMouseEnter={() => !loadingTeams && setHoveredBtn('switchteam')}
             onMouseLeave={() => setHoveredBtn(null)}
+            disabled={loadingTeams}
           >
-            {isLoggedIn ? 'Switch Team' : 'Login to Switch Team'}
+            {loadingTeams ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  border: '2px solid #fff',
+                  borderTop: '2px solid transparent',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }}></div>
+                Loading Teams...
+              </div>
+            ) : (
+              isLoggedIn ? 'Switch Team' : 'Login to Switch Team'
+            )}
           </button>
 
           <button
@@ -109,5 +135,6 @@ export default function HeroSection({
         </div>
       </div>
     </main>
+    </>
   );
 } 

@@ -7,6 +7,8 @@ import PageTitle from '../components/PageTitle';
 import Header from '../components/Header';
 import useSessionTimeout from '../hooks/useSessionTimeout';
 import { getMatchesData, clearMatchesCache, clearMatchesCacheForCombination } from '../App';
+import userService from '../utils/userService';
+import { safelyActivateTeam } from '../utils/teamUtils';
 import {
   MatchTable,
   ExportModal,
@@ -82,7 +84,13 @@ export default function HomePage() {
   const isMountedRef = useRef(true);
 
   // Form field states for ExportModal
-  const [matchDate, setMatchDate] = useState('');
+  const [matchDate, setMatchDate] = useState(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
   const [winner, setWinner] = useState('');
   const [blueTeam, setBlueTeam] = useState('');
   const [redTeam, setRedTeam] = useState('');
@@ -173,14 +181,35 @@ export default function HomePage() {
     setShowAlertModal(true);
   };
 
-  // Check if user is logged in and is not admin
+  // Check if user is logged in and fetch fresh data from database
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('currentUser'));
-    if (!user) {
-      navigate('/');
-      return;
-    }
-    setCurrentUser(user);
+    const loadUser = async () => {
+      try {
+        const result = await userService.getCurrentUserWithPhoto();
+        if (result.success) {
+          setCurrentUser(result.user);
+        } else {
+          // Fallback to localStorage if database fetch fails
+          const localUser = JSON.parse(localStorage.getItem('currentUser'));
+          if (localUser) {
+            setCurrentUser(localUser);
+          } else {
+            navigate('/');
+          }
+        }
+      } catch (error) {
+        console.error('Error loading user:', error);
+        // Fallback to localStorage
+        const localUser = JSON.parse(localStorage.getItem('currentUser'));
+        if (localUser) {
+          setCurrentUser(localUser);
+        } else {
+          navigate('/');
+        }
+      }
+    };
+
+    loadUser();
   }, [navigate]);
 
   // Automatically set team as active when entering HomePage
@@ -267,7 +296,7 @@ export default function HomePage() {
   useEffect(() => {
     const loadHeroes = async () => {
       try {
-        const response = await fetch('/api/heroes');
+        const response = await fetch(buildApiUrl('/heroes'));
         const data = await response.json();
         setHeroList(data);
       } catch (error) {
@@ -286,7 +315,7 @@ export default function HomePage() {
         try {
           const teamData = JSON.parse(latestTeam);
           // Call getActive to update last activity timestamp
-          await fetch('/api/teams/active', {
+          await fetch(buildApiUrl('/teams/active'), {
             headers: {
               'X-Active-Team-ID': teamData.id
             }
@@ -321,7 +350,7 @@ export default function HomePage() {
               const criticalHeroes = heroList.slice(0, 10); // Preload first 10 heroes
         criticalHeroes.forEach(hero => {
           const img = new Image();
-          img.src = `/heroes/${hero.role.toLowerCase()}/${hero.image}`;
+          img.src = `https://api.coachdatastatistics.site/heroes/${hero.role.toLowerCase()}/${hero.image}`;
         });
     }
   }, [heroList]);
@@ -359,7 +388,11 @@ export default function HomePage() {
     setPlaystyle('');
     
     // Reset form field states
-    setMatchDate('');
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    setMatchDate(`${year}-${month}-${day}`);
     setWinner('');
     setBlueTeam('');
     setRedTeam('');
@@ -449,7 +482,8 @@ export default function HomePage() {
       setLordTakenRed('');
     }
 
-    // Open modal
+    // Close hover modal and open edit modal
+    setHoveredMatchId(null);
     setModalState('export');
   }
 
@@ -539,8 +573,21 @@ export default function HomePage() {
       if (isEditing && editingMatchId) {
         // One request only; backend recreates children from teams
         const updated = await updateMatch(editingMatchId, payload, { banning, picks });
-        // update local list with returned record
-        setMatches(prev => prev.map(m => (m.id === updated.id ? updated : m)));
+        console.log('Match update completed, updating local state:', { updated, editingMatchId });
+        
+        // Clear cache and refresh matches list to ensure we have the latest data
+        clearMatchesCacheForCombination(currentTeamId, matchMode);
+        const refreshedMatches = await getMatchesData(currentTeamId, matchMode);
+        
+        if (refreshedMatches && refreshedMatches.length > 0) {
+          refreshedMatches.sort((a, b) => {
+            if (a.match_date === b.match_date) return b.id - a.id;
+            return new Date(b.match_date) - new Date(a.match_date);
+          });
+          setMatches(refreshedMatches);
+          console.log('Matches list refreshed after update:', refreshedMatches);
+        }
+        
         showAlert('Match updated!', 'success');
       } else {
         await createMatch(payload, { banning, picks }); // keep your create flow
@@ -562,6 +609,16 @@ export default function HomePage() {
     // Get the current team ID from localStorage
     const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
     const currentTeamId = latestTeam?.id;
+    
+    console.log('Updating match with data:', {
+      matchId,
+      matchPayload,
+      banning,
+      picks,
+      blueTeam,
+      redTeam,
+      currentTeamId
+    });
     
     // 1) Update parent match with teams data
     const fullMatchPayload = {
@@ -586,6 +643,25 @@ export default function HomePage() {
       ]
     };
 
+    console.log('Full match payload being sent:', fullMatchPayload);
+
+    // Ensure team is activated before updating match
+    if (currentTeamId) {
+      try {
+        console.log('Activating team before match update:', currentTeamId);
+        const activationSuccess = await safelyActivateTeam(currentTeamId);
+        if (!activationSuccess) {
+          console.warn('Team activation had issues, but proceeding with match update');
+        }
+        
+        // Wait a moment for the activation to complete
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        console.error('Error activating team before match update:', error);
+        // Continue anyway - the backend will handle team activation
+      }
+    }
+
     // Prepare headers with team ID for backend compatibility
     const headers = { 
       'Content-Type': 'application/json', 
@@ -596,19 +672,38 @@ export default function HomePage() {
       headers['X-Active-Team-ID'] = currentTeamId;
     }
 
-            const res = await fetch(`/api/matches/${matchId}`, {
+    console.log('Making API call to:', buildApiUrl(`/matches/${matchId}`));
+    console.log('Request headers:', headers);
+
+    const res = await fetch(buildApiUrl(`/matches/${matchId}`), {
       method: 'PUT',
       headers,
       body: JSON.stringify(fullMatchPayload),
     });
+    
+    console.log('API response status:', res.status);
+    console.log('API response headers:', res.headers);
+    
     if (!res.ok) {
       const txt = await res.text();
+      console.error('Update match failed:', res.status, txt);
       throw new Error(`Update match failed: ${res.status} ${txt}`);
     }
 
     // Backend now handles all team updates in one transaction
     // Return the updated match data for frontend state update
     const updated = await res.json();
+    console.log('Updated match data received:', updated);
+    
+    // Trigger player statistics refresh after match update
+    window.dispatchEvent(new CustomEvent('matchUpdated', { 
+      detail: { 
+        matchId, 
+        teamId: currentTeamId,
+        matchData: updated 
+      } 
+    }));
+    
     return updated;
   }
 
@@ -708,6 +803,23 @@ export default function HomePage() {
       ]
     };
 
+    // Ensure team is activated before creating match
+    if (latestTeam?.id) {
+      try {
+        console.log('Activating team before match creation:', latestTeam.id);
+        const activationSuccess = await safelyActivateTeam(latestTeam.id);
+        if (!activationSuccess) {
+          console.warn('Team activation had issues, but proceeding with match creation');
+        }
+        
+        // Wait a moment for the activation to complete
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        console.error('Error activating team before match creation:', error);
+        // Continue anyway - the backend will handle team activation
+      }
+    }
+
     // Prepare headers with team ID for backend compatibility
     const headers = { 
       'Content-Type': 'application/json', 
@@ -718,7 +830,7 @@ export default function HomePage() {
       headers['X-Active-Team-ID'] = latestTeam.id;
     }
 
-            const response = await fetch('/api/matches', {
+    const response = await fetch(buildApiUrl('/matches'), {
       method: 'POST',
       headers,
       body: JSON.stringify(fullPayload)
@@ -745,6 +857,15 @@ export default function HomePage() {
     } else {
       setMatches([]);
     }
+    
+    // Trigger player statistics refresh after new match creation
+    window.dispatchEvent(new CustomEvent('matchUpdated', { 
+      detail: { 
+        matchId: null, // New match, no ID yet
+        teamId: matchPayload.team_id,
+        matchData: fullPayload 
+      } 
+    }));
   }
 
   React.useEffect(() => {
@@ -769,7 +890,7 @@ export default function HomePage() {
         headers['X-Active-Team-ID'] = currentTeamId;
       }
       
-              const response = await fetch(`/api/matches/${matchId}`, { 
+              const response = await fetch(buildApiUrl(`/matches/${matchId}`), { 
         method: 'DELETE',
         headers
       });
@@ -779,6 +900,7 @@ export default function HomePage() {
         setMatches(prev => prev.filter(m => m.id !== matchId));
         setModalState('none');
         setDeleteConfirmMatch(null);
+        showAlert('Match deleted successfully!', 'success');
       } else {
         const errorData = await response.text();
         console.error('Server error:', response.status, errorData);
@@ -793,7 +915,7 @@ export default function HomePage() {
   // Logout handler
   const handleLogout = () => {
     // Clear active team when logging out
-    fetch('/api/teams/set-active', {
+    fetch(buildApiUrl('/teams/set-active'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -824,7 +946,10 @@ export default function HomePage() {
           <div className="w-[1600px] max-w-[95vw] mx-auto p-4 rounded-2xl" style={{ background: '#23232a', boxShadow: '0 4px 24px 0 rgba(0,0,0,0.25)', border: '1px solid #23283a', marginTop: 0 }}>
             {/* Top Controls */}
             <TopControls 
-              onExportClick={() => setModalState('export')}
+              onExportClick={() => {
+                setHoveredMatchId(null);
+                setModalState('export');
+              }}
               onHeroStatsClick={() => setShowHeroStatsModal(true)}
               currentMode={matchMode}
               onModeChange={handleModeChange}
@@ -1000,6 +1125,14 @@ export default function HomePage() {
         match={matches.find(m => m.id === hoveredMatchId)}
         heroMap={heroMap}
         isVisible={!!hoveredMatchId}
+        onMouseEnter={() => {
+          // Keep the modal open when hovering inside it
+          // Don't change hoveredMatchId
+        }}
+        onMouseLeave={() => {
+          // Close the modal when leaving it
+          setHoveredMatchId(null);
+        }}
       />
       
       {/* Profile Modal */}
@@ -1007,6 +1140,9 @@ export default function HomePage() {
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
         user={currentUser}
+        onUserUpdate={(updatedUser) => {
+          setCurrentUser(updatedUser);
+        }}
       />
       
       {/* Alert Modal */}

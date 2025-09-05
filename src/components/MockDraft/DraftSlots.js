@@ -14,7 +14,9 @@ export default function DraftSlots({
   handleDraftSlotEdit, 
   isCompleteDraft = false,
   customLaneAssignments,
-  onLaneReassign
+  onLaneReassign,
+  onLaneSwap,
+  heroList = []
 }) {
   // Use custom lane assignments if available, otherwise fall back to null (unassigned)
   const laneOrder = customLaneAssignments?.[team] || [null, null, null, null, null];
@@ -31,13 +33,30 @@ export default function DraftSlots({
   };
   
   // For red team ban slots, we need to reverse the order to fill from right to left
-  const getHeroForSlot = (index) => {
+  const getSlotValue = (index) => {
     if (type === 'ban' && team === 'red') {
       // For red team bans, reverse the index to fill from right to left
       const reversedIndex = 4 - index; // 4, 3, 2, 1, 0
       return heroes[reversedIndex];
     }
     return heroes[index];
+  };
+
+  // turn slot value into a hero object (or null)
+  const toHero = (slotVal) => {
+    if (!slotVal) return null;
+    // If it's already an object with hero properties, return it
+    if (typeof slotVal === 'object' && slotVal.name) return slotVal;
+    // If it's a string, find the hero object from the heroList
+    if (typeof slotVal === 'string') {
+      const heroFromList = heroList.find(hero => hero.name === slotVal);
+      if (heroFromList) {
+        return heroFromList;
+      }
+      // Fallback: return a simple object with the name
+      return { name: slotVal, image: '', role: '' };
+    }
+    return slotVal;
   };
   
   const isSlotActive = (index) => {
@@ -49,20 +68,13 @@ export default function DraftSlots({
     return isActiveSlot(type, team, index);
   };
   
-  const isSlotSkipped = (index) => {
-    const hero = getHeroForSlot(index);
-    return hero === null;
-  };
-  
-  const isSlotEmpty = (index) => {
-    const hero = getHeroForSlot(index);
-    return hero === null || hero === undefined;
-  };
+  const isSlotSkipped = (index) => getSlotValue(index) === null;
+  const isSlotEmpty = (index) => getSlotValue(index) == null;
   
   return (
     <>
       {Array.from({ length: 5 }).map((_, i) => {
-        const hero = getHeroForSlot(i);
+        const hero = toHero(getSlotValue(i));
         const isActive = isSlotActive(i);
         const currentLane = laneOrder[i]; // Get lane for this slot position
         
@@ -82,6 +94,7 @@ export default function DraftSlots({
               <LaneSelector
                 currentLane={currentLane}
                 onLaneSelect={onLaneReassign}
+                onLaneSwap={onLaneSwap}
                 availableLanes={getAvailableLanes(i)}
                 team={team}
                 slotIndex={i}
@@ -92,7 +105,7 @@ export default function DraftSlots({
             
             {/* Hero icon */}
             <div
-              className={`relative ${size} rounded-full bg-white/90 flex items-center justify-center overflow-hidden ${outline} ${isCompleteDraft ? 'hover:scale-105 transition-transform duration-200 cursor-pointer' : ''}`}
+              className={`relative ${size} rounded-full bg-white/90 flex items-center justify-center overflow-hidden ${outline} ${isCompleteDraft ? 'hover:scale-105 transition-transform duration-200 cursor-pointer group' : ''}`}
               onClick={isCompleteDraft ? () => {
                 if (handleDraftSlotClick) {
                   if (type === 'ban' && team === 'red') {
@@ -109,10 +122,22 @@ export default function DraftSlots({
               {hero ? (
                 <>
                   <img
-                    src={`/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
+                    src={`${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/hero-image/${hero.role?.trim().toLowerCase()}/${encodeURIComponent(hero.image)}`}
                     alt={hero.name}
-                    className="w-full h-full object-cover rounded-full"
+                    className="w-full h-full object-cover rounded-full transition-opacity duration-200"
                     draggable={false}
+                    crossOrigin="anonymous"
+                    referrerPolicy="no-referrer"
+                    loading="eager"
+                    decoding="sync"
+                    onLoad={(e) => {
+                      e.target.style.opacity = '1';
+                    }}
+                    onError={(e) => {
+                      console.log(`Failed to load image for ${hero.name}:`, e.target.src);
+                      e.target.style.display = 'none';
+                    }}
+                    style={{ opacity: '0' }}
                   />
                   {/* X icon overlay for banned hero */}
                   {type === 'ban' && (
@@ -128,6 +153,7 @@ export default function DraftSlots({
                       &#10006;
                     </span>
                   )}
+                  
                 </>
               ) : isSlotEmpty(i) ? (
                 // Show empty slot indicator
@@ -146,6 +172,7 @@ export default function DraftSlots({
               <LaneSelector
                 currentLane={currentLane}
                 onLaneSelect={onLaneReassign}
+                onLaneSwap={onLaneSwap}
                 availableLanes={getAvailableLanes(i)}
                 team={team}
                 slotIndex={i}

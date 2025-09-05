@@ -5,7 +5,7 @@ import hoverBg from '../../assets/hoverbg.jpg';
 const OptimizedHeroImage = React.memo(({ heroName, size = 40, isBan = false, className = "", heroMap }) => {
   const [imageError, setImageError] = React.useState(false);
   const hero = heroMap.get(heroName);
-  const imagePath = hero ? `/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}` : null;
+  const imagePath = hero ? `https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}` : null;
   
   if (!hero || !imagePath) {
     return (
@@ -88,7 +88,7 @@ const OptimizedBanHeroIcon = React.memo(({ heroName, heroMap }) => {
   }
   
   const hero = heroMap.get(heroName);
-  const imagePath = hero ? `/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}` : null;
+  const imagePath = hero ? `https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}` : null;
   
   if (!hero || !imagePath) {
     return (
@@ -145,7 +145,7 @@ const OptimizedBanHeroIcon = React.memo(({ heroName, heroMap }) => {
   );
 });
 
-export default function MatchHoverModal({ match, heroMap, isVisible }) {
+export default function MatchHoverModal({ match, heroMap, isVisible, onMouseEnter, onMouseLeave }) {
   if (!isVisible || !match) return null;
 
   // Center the hovered details
@@ -201,13 +201,15 @@ export default function MatchHoverModal({ match, heroMap, isVisible }) {
         boxShadow: '0 4px 24px 0 rgba(0,0,0,0.25)',
         padding: 24,
         minWidth: 800,
-        pointerEvents: 'none',
+        pointerEvents: 'auto',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         maxHeight: '90vh',
         overflowY: 'auto',
         opacity: 0,
         animation: 'slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards',
       }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       {/* Visual Draft View */}
       <div style={{
@@ -332,9 +334,25 @@ export default function MatchHoverModal({ match, heroMap, isVisible }) {
                 border: '1px solid rgba(59,130,246,0.2)',
                 boxShadow: '0 4px 12px rgba(59,130,246,0.1)',
                 position: 'relative',
+                maxWidth: '100%',
+                overflow: 'hidden',
               }}>
                 <div style={{ fontSize: '10px', color: '#93c5fd', fontWeight: 'bold', marginBottom: '8px' }}>Playstyle</div>
-                <div style={{ fontSize: '14px', color: 'white', fontWeight: 'semibold', textAlign: 'center', width: '100%' }}>{match.playstyle}</div>
+                <div style={{ 
+                  fontSize: '14px', 
+                  color: 'white', 
+                  fontWeight: 'semibold', 
+                  textAlign: 'left', 
+                  width: '100%',
+                  wordWrap: 'break-word',
+                  wordBreak: 'break-word',
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'break-word',
+                  maxHeight: '120px',
+                  overflowY: 'auto',
+                  lineHeight: '1.4',
+                  padding: '4px 0'
+                }}>{match.playstyle}</div>
               </div>
             )}
 
@@ -349,9 +367,25 @@ export default function MatchHoverModal({ match, heroMap, isVisible }) {
                 border: '1px solid rgba(34,197,94,0.2)',
                 boxShadow: '0 4px 12px rgba(34,197,94,0.1)',
                 position: 'relative',
+                maxWidth: '100%',
+                overflow: 'hidden',
               }}>
                 <div style={{ fontSize: '10px', color: '#86efac', fontWeight: 'bold', marginBottom: '8px' }}>Notes</div>
-                <div style={{ fontSize: '16px', color: 'white', fontWeight: 'semibold', textAlign: 'center', width: '100%' }}>{match.notes}</div>
+                <div style={{ 
+                  fontSize: '14px', 
+                  color: 'white', 
+                  fontWeight: 'semibold', 
+                  textAlign: 'left', 
+                  width: '100%',
+                  wordWrap: 'break-word',
+                  wordBreak: 'break-word',
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'break-word',
+                  maxHeight: '120px',
+                  overflowY: 'auto',
+                  lineHeight: '1.4',
+                  padding: '4px 0'
+                }}>{match.notes}</div>
               </div>
             )}
           </div>

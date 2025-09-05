@@ -5,7 +5,7 @@ import { FaTrash, FaEdit } from 'react-icons/fa';
 const OptimizedHeroImage = React.memo(({ heroName, size = 40, isBan = false, className = "", heroMap }) => {
   const [imageError, setImageError] = React.useState(false);
   const hero = heroMap.get(heroName);
-  const imagePath = hero ? `/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}` : null;
+  const imagePath = hero ? `https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}` : null;
   
   if (!hero || !imagePath) {
     return (
@@ -70,7 +70,7 @@ const OptimizedHeroImage = React.memo(({ heroName, size = 40, isBan = false, cla
 const OptimizedBanHeroIcon = React.memo(({ heroName, heroMap }) => {
   const [imageError, setImageError] = React.useState(false);
   const hero = heroMap.get(heroName);
-  const imagePath = hero ? `/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}` : null;
+  const imagePath = hero ? `https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}` : null;
   
   if (!hero || !imagePath) {
     return (
@@ -207,11 +207,12 @@ export default function MatchTable({
                       }
                     }}
                     onMouseLeave={(e) => {
-                      // Clear when leaving the row entirely
+                      // Clear when leaving the row entirely, but not if moving to the modal
                       const relatedTarget = e.relatedTarget;
                       const isStillInRow = relatedTarget && relatedTarget.closest && relatedTarget.closest(`[data-match-id="${match.id}"]`);
+                      const isMovingToModal = relatedTarget && relatedTarget.closest && relatedTarget.closest('[style*="position: fixed"]');
                       
-                      if (!isStillInRow) {
+                      if (!isStillInRow && !isMovingToModal) {
                         setHoveredMatchId(null);
                       }
                     }}

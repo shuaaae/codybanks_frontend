@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { buildApiUrl } from '../config/api';
 
 const AddSubstitutePlayerModal = ({ 
   show, 
@@ -79,7 +80,7 @@ const AddSubstitutePlayerModal = ({
     setIsSubmitting(true);
     
     try {
-      const response = await fetch('/api/players', {
+      const response = await fetch(buildApiUrl('/players'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

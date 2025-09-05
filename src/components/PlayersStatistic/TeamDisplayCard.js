@@ -90,7 +90,7 @@ const TeamDisplayCard = ({ teamName, teamLogo, onEditPlayers }) => {
                  />
                ) : null}
               <FaUsers 
-                className={`w-8 h-8 text-white drop-shadow-lg ${teamLogo ? 'hidden' : 'block'}`} 
+                className="w-8 h-8 text-white drop-shadow-lg"
                 style={{ display: teamLogo ? 'none' : 'flex' }}
               />
             </div>

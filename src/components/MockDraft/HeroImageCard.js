@@ -31,7 +31,7 @@ export default function HeroImageCard({ hero, pendingSlot, setPendingSlot, assig
       <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center overflow-hidden relative transition-transform group-hover:scale-105 group-active:scale-95" style={{ border: 'none', outline: 'none', boxShadow: 'none' }}>
         {!loaded && <Spinner />}
         <img
-          src={`/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
+          src={`https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
           alt={hero.name}
           className={`w-16 h-16 rounded-full object-cover absolute top-0 left-0 transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
           onLoad={() => setLoaded(true)}

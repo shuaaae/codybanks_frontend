@@ -5,6 +5,8 @@ import { addDays, format, startOfWeek } from 'date-fns';
 import PageTitle from '../components/PageTitle';
 import Header from '../components/Header';
 import useSessionTimeout from '../hooks/useSessionTimeout';
+import { buildApiUrl } from '../config/api';
+import userService from '../utils/userService';
 import {
   DateRangePicker,
   ProgressionChart,
@@ -113,7 +115,7 @@ export default function WeeklyReport() {
           console.log('Activating team:', teamData);
           
           // Set this team as active when entering the page
-          const response = await fetch('/api/teams/set-active', {
+          const response = await fetch(buildApiUrl('/teams/set-active'), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -142,7 +144,7 @@ export default function WeeklyReport() {
   useEffect(() => {
     return () => {
       // Clear active team when component unmounts (user leaves the page)
-      fetch('/api/teams/set-active', {
+      fetch(buildApiUrl('/teams/set-active'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -177,14 +179,35 @@ export default function WeeklyReport() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []); // Empty dependency array to avoid re-creating
 
-  // Check if user is logged in
+  // Check if user is logged in and fetch fresh data from database
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('currentUser'));
-    if (!user) {
-      navigate('/');
-      return;
-    }
-    setCurrentUser(user);
+    const loadUser = async () => {
+      try {
+        const result = await userService.getCurrentUserWithPhoto();
+        if (result.success) {
+          setCurrentUser(result.user);
+        } else {
+          // Fallback to localStorage if database fetch fails
+          const localUser = JSON.parse(localStorage.getItem('currentUser'));
+          if (localUser) {
+            setCurrentUser(localUser);
+          } else {
+            navigate('/');
+          }
+        }
+      } catch (error) {
+        console.error('Error loading user:', error);
+        // Fallback to localStorage
+        const localUser = JSON.parse(localStorage.getItem('currentUser'));
+        if (localUser) {
+          setCurrentUser(localUser);
+        } else {
+          navigate('/');
+        }
+      }
+    };
+
+    loadUser();
   }, [navigate]);
 
   // Save date range to localStorage whenever it changes
@@ -218,7 +241,7 @@ export default function WeeklyReport() {
 
   const handleLogout = () => {
     // Clear active team when logging out
-    fetch('/api/teams/set-active', {
+    fetch(buildApiUrl('/teams/set-active'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -250,7 +273,7 @@ export default function WeeklyReport() {
         setLoading(true);
         
         console.log('Initial data fetch on mount for date range:', startDate, 'to', endDate);
-        fetch(`/api/matches?match_type=${matchMode}`, {
+        fetch(buildApiUrl(`/matches?match_type=${matchMode}`), {
           credentials: 'include'
         })
           .then(res => res.json())
@@ -361,7 +384,7 @@ export default function WeeklyReport() {
   // Function to load notes from database
   const loadNotesFromDatabase = async () => {
     try {
-      const response = await fetch('/api/notes', {
+      const response = await fetch(buildApiUrl('/notes'), {
         headers: {
           'Content-Type': 'application/json',
         },
@@ -387,7 +410,7 @@ export default function WeeklyReport() {
     }
 
     try {
-      const response = await fetch('/api/notes', {
+      const response = await fetch(buildApiUrl('/notes'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -424,7 +447,7 @@ export default function WeeklyReport() {
   // Function to delete a saved note
   const handleDeleteNote = async (noteId) => {
     try {
-      const response = await fetch(`/api/notes/${noteId}`, {
+      const response = await fetch(buildApiUrl(`/notes/${noteId}`), {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -498,7 +521,7 @@ export default function WeeklyReport() {
     setLoading(true);
     
     console.log('Fetching matches for date range:', startDate, 'to', endDate);
-    fetch(`/api/matches?match_type=${matchMode}`, {
+    fetch(buildApiUrl(`/matches?match_type=${matchMode}`), {
       credentials: 'include'
     })
       .then(res => res.json())
@@ -742,6 +765,9 @@ export default function WeeklyReport() {
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
         user={currentUser}
+        onUserUpdate={(updatedUser) => {
+          setCurrentUser(updatedUser);
+        }}
       />
 
       <SessionTimeoutModal

@@ -174,196 +174,168 @@ const PlayerGrid = ({
     );
   }
 
-  // Case 4: Exactly 6 players - Use the current 6-player JSX block
+    // Case 4: Exactly 6 players - Enhanced layout that properly handles duplicate roles
   if (hasSixPlayers) {
-    // 3x3 grid layout: 3 players on left, 3 on right
+    // Get all players and group them by role
+    const playersArray = teamPlayers?.players_data || teamPlayers?.players;
+    
+    // Group players by their actual roles
+    const playersByRole = {};
+    playersArray.forEach((player, index) => {
+      if (player.role) {
+        const roleKey = player.role.toLowerCase();
+        if (!playersByRole[roleKey]) {
+          playersByRole[roleKey] = [];
+        }
+        playersByRole[roleKey].push({ ...player, originalIndex: index });
+      }
+    });
+    
+    // Create a flexible layout that shows all players with their proper role backgrounds
     return (
       <div className="w-full flex flex-col items-center space-y-8 px-4">
-        {/* Two columns: Left (3 players) and Right (3 players) */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-12 w-full max-w-7xl">
-          {/* Left Column: exp, mid, jungler */}
+          {/* Left Column */}
           <div className="flex flex-col space-y-6">
-            {(() => {
-                          const playerName = getPlayerNameForLane('exp', 0);
-            const playerRole = getRoleByLaneKey('exp');
-            const playerObj = safePlayers.find(p => p.name === playerName) || { ...PLAYER, name: playerName, role: playerRole };
-              const playerIdentifier = getPlayerIdentifier(playerName, playerRole);
-              return (
-                <div key="exp" className="flex justify-center">
-                  <PlayerCard 
-                    lane={LANES[0]} 
-                    player={playerObj} 
-                    hero={getHeroForLaneByLaneKey('exp', lanePlayers)} 
-                    onClick={() => onPlayerClick({ 
-                      lane: LANES[0], 
-                      player: { ...playerObj, role: playerRole, identifier: playerIdentifier }, 
-                      hero: getHeroForLaneByLaneKey('exp', lanePlayers) 
-                    })} 
-                    getPlayerPhoto={(name) => getPlayerPhoto(name, playerRole)} 
-                    teamPlayers={teamPlayers}
-                  />
-                </div>
-              );
-            })()}
-            
-            {(() => {
-                          const playerName = getPlayerNameForLane('mid', 1);
-            const playerRole = getRoleByLaneKey('mid');
-            const playerObj = safePlayers.find(p => p.name === playerName) || { ...PLAYER, name: playerName, role: playerRole };
-              const playerIdentifier = getPlayerIdentifier(playerName, playerRole);
-              return (
-                <div key="mid" className="flex justify-center">
-                  <PlayerCard 
-                    lane={LANES[1]} 
-                    player={playerObj} 
-                    hero={getHeroForLaneByLaneKey('mid', lanePlayers)} 
-                    onClick={() => onPlayerClick({ 
-                      lane: LANES[1], 
-                      player: { ...playerObj, role: playerRole, identifier: playerIdentifier }, 
-                      hero: getHeroForLaneByLaneKey('mid', lanePlayers) 
-                    })} 
-                    getPlayerPhoto={(name) => getPlayerPhoto(name, playerRole)} 
-                    teamPlayers={teamPlayers}
-                  />
-                </div>
-              );
-            })()}
-            
-            {(() => {
-              const playerName = getPlayerNameForLane('jungler', 2);
-              const playerRole = getRoleByLaneKey('jungler');
-              const playerObj = safePlayers.find(p => p.name === playerName) || { ...PLAYER, name: playerName, role: playerRole };
-              const playerIdentifier = getPlayerIdentifier(playerName, playerRole);
-            return (
-                <div key="jungler" className="flex justify-center">
-                <PlayerCard
-                    lane={LANES[2]} 
-                    player={playerObj} 
-                    hero={getHeroForLaneByLaneKey('jungler', lanePlayers)} 
-                    onClick={() => onPlayerClick({ 
-                      lane: LANES[2], 
-                      player: { ...playerObj, role: playerRole, identifier: playerIdentifier }, 
-                      hero: getHeroForLaneByLaneKey('jungler', lanePlayers) 
-                    })} 
-                    getPlayerPhoto={(name) => getPlayerPhoto(name, playerRole)} 
-                  teamPlayers={teamPlayers}
-                />
-              </div>
-            );
-            })()}
-        </div>
-        
-          {/* Right Column: gold, roam, substitute */}
-          <div className="flex flex-col space-y-6">
-            {(() => {
-              const playerName = getPlayerNameForLane('gold', 3);
-              const playerRole = getRoleByLaneKey('gold');
-              const playerObj = safePlayers.find(p => p.name === playerName) || { ...PLAYER, name: playerName, role: playerRole };
-              const playerIdentifier = getPlayerIdentifier(playerName, playerRole);
-              return (
-                <div key="gold" className="flex justify-center">
-                  <PlayerCard 
-                    lane={LANES[3]} 
-                    player={playerObj} 
-                    hero={getHeroForLaneByLaneKey('gold', lanePlayers)} 
-                    onClick={() => onPlayerClick({ 
-                      lane: LANES[3], 
-                      player: { ...playerObj, role: playerRole, identifier: playerIdentifier }, 
-                      hero: getHeroForLaneByLaneKey('gold', lanePlayers) 
-                    })} 
-                    getPlayerPhoto={(name) => getPlayerPhoto(name, playerRole)} 
-                    teamPlayers={teamPlayers}
-                  />
-                </div>
-              );
-            })()}
-            
-            {(() => {
-              const playerName = getPlayerNameForLane('roam', 4);
-              const playerRole = getRoleByLaneKey('roam');
-              const playerObj = safePlayers.find(p => p.name === playerName) || { ...PLAYER, name: playerName, role: playerRole };
-              const playerIdentifier = getPlayerIdentifier(playerName, playerRole);
-            return (
-                <div key="roam" className="flex justify-center">
-                <PlayerCard
-                    lane={LANES[4]} 
-                    player={playerObj} 
-                    hero={getHeroForLaneByLaneKey('roam', lanePlayers)} 
-                    onClick={() => onPlayerClick({ 
-                      lane: LANES[4], 
-                      player: { ...playerObj, role: playerRole, identifier: playerIdentifier }, 
-                      hero: getHeroForLaneByLaneKey('roam', lanePlayers) 
-                    })} 
-                    getPlayerPhoto={(name) => getPlayerPhoto(name, playerRole)} 
-                    teamPlayers={teamPlayers}
-                  />
-                </div>
-              );
-            })()}
-            
-            {(() => {
-              // 6th player - get the actual 6th player from the team data
-              const playersArray = teamPlayers?.players_data || teamPlayers?.players;
-              const sixthPlayer = playersArray && playersArray.length >= 6 ? playersArray[5] : null;
+            {playersArray.slice(0, 3).map((player, idx) => {
+              const actualRole = player.role ? player.role.toLowerCase() : '';
+              let laneKey = 'sub';
+              let laneLabel = `Player ${idx + 1}`;
+              let laneIcon = defaultPlayer;
+              let isSubstitute = false;
               
-              if (sixthPlayer && sixthPlayer.name) {
-                const playerName = sixthPlayer.name;
-                const playerObj = safePlayers.find(p => p.name === playerName) || sixthPlayer;
-                
-                if (playerObj && playerObj.role) {
-                  // Check if this player has a specific role (like "gold" for yuki)
-                  const actualRole = playerObj.role.toLowerCase();
+              // Map the actual role to lane key and determine styling
+              if (actualRole.includes('exp') || actualRole.includes('explane')) {
+                laneKey = 'exp';
+                const expCount = playersArray.slice(0, idx + 1).filter(p => 
+                  p.role && p.role.toLowerCase().includes('exp')
+                ).length;
+                laneLabel = expCount === 1 ? 'EXPLANER' : `EXPLANER ${expCount}`;
+                laneIcon = getLaneIconByRole(actualRole);
+                isSubstitute = expCount > 1;
+              } else if (actualRole.includes('mid') || actualRole.includes('midlane')) {
+                laneKey = 'mid';
+                const midCount = playersArray.slice(0, idx + 1).filter(p => 
+                  p.role && p.role.toLowerCase().includes('mid')
+                ).length;
+                laneLabel = midCount === 1 ? 'MIDLANER' : `MIDLANER ${midCount}`;
+                laneIcon = getLaneIconByRole(actualRole);
+                isSubstitute = midCount > 1;
+              } else if (actualRole.includes('jungle') || actualRole.includes('jungler')) {
+                laneKey = 'jungler';
+                const junglerCount = playersArray.slice(0, idx + 1).filter(p => 
+                  p.role && p.role.toLowerCase().includes('jungle')
+                ).length;
+                laneLabel = junglerCount === 1 ? 'JUNGLER' : `JUNGLER ${junglerCount}`;
+                laneIcon = getLaneIconByRole(actualRole);
+                isSubstitute = junglerCount > 1;
+              } else if (actualRole.includes('gold') || actualRole.includes('marksman')) {
+                laneKey = 'gold';
+                const goldCount = playersArray.slice(0, idx + 1).filter(p => 
+                  p.role && p.role.toLowerCase().includes('gold')
+                ).length;
+                laneLabel = goldCount === 1 ? 'GOLD LANER' : `GOLD LANER ${goldCount}`;
+                laneIcon = getLaneIconByRole(actualRole);
+                isSubstitute = goldCount > 1;
+              } else if (actualRole.includes('roam') || actualRole.includes('support')) {
+                laneKey = 'roam';
+                const roamCount = playersArray.slice(0, idx + 1).filter(p => 
+                  p.role && p.role.toLowerCase().includes('roam')
+                ).length;
+                laneLabel = roamCount === 1 ? 'ROAMER' : `ROAMER ${roamCount}`;
+                laneIcon = getLaneIconByRole(actualRole);
+                isSubstitute = roamCount > 1;
+              } else if (actualRole.includes('sub') || actualRole.includes('substitute')) {
+                laneKey = 'sub';
+                laneLabel = 'SUBSTITUTE';
+                laneIcon = defaultPlayer;
+                isSubstitute = true;
+              }
+              
+              const playerObj = safePlayers.find(p => p.name === player.name) || player;
+              const playerIdentifier = getPlayerIdentifier(player.name, player.role);
+              
+              return (
+                <div key={`left-${idx}`} className="flex justify-center">
+                  <PlayerCard 
+                    lane={{ 
+                      key: laneKey, 
+                      label: laneLabel, 
+                      icon: laneIcon,
+                      isSubstitute: isSubstitute,
+                      originalRole: actualRole
+                    }} 
+                    player={playerObj} 
+                    hero={getHeroForLaneByLaneKey(laneKey, lanePlayers)} 
+                    onClick={() => onPlayerClick({ 
+                      lane: { 
+                        key: laneKey, 
+                        label: laneLabel, 
+                        icon: laneIcon,
+                        isSubstitute: isSubstitute,
+                        originalRole: actualRole
+                      }, 
+                      player: { ...playerObj, role: player.role, identifier: playerIdentifier }, 
+                      hero: getHeroForLaneByLaneKey(laneKey, lanePlayers) 
+                    })} 
+                    getPlayerPhoto={(name) => getPlayerPhoto(name, player.role)} 
+                    teamPlayers={teamPlayers}
+                  />
+                </div>
+              );
+            })}
+                </div>
+          
+          {/* Right Column */}
+          <div className="flex flex-col space-y-6">
+            {playersArray.slice(3, 6).map((player, idx) => {
+              const actualRole = player.role ? player.role.toLowerCase() : '';
                   let laneKey = 'sub';
-                  let laneLabel = 'PLAYER 6';
+              let laneLabel = `Player ${idx + 4}`;
                   let laneIcon = defaultPlayer;
                   let isSubstitute = false;
                   
-                  // Map the actual role to lane key and determine if it's a substitute
-                  if (actualRole.includes('roam') || actualRole.includes('support')) {
-                    laneKey = 'roam';
-                    // Count how many roam players we have so far
-                    const roamCount = playersArray.slice(0, 6).filter(p => 
-                      p.role && p.role.toLowerCase().includes('roam')
-                    ).length;
-                    laneLabel = roamCount === 1 ? 'ROAMER' : `ROAMER ${roamCount}`;
-                    laneIcon = getLaneIconByRole(actualRole);
-                    isSubstitute = true;
-                  } else if (actualRole.includes('exp') || actualRole.includes('explane')) {
+              // Map the actual role to lane key and determine styling
+              if (actualRole.includes('exp') || actualRole.includes('explane')) {
                     laneKey = 'exp';
-                    // Count how many exp players we have so far
-                    const expCount = playersArray.slice(0, 6).filter(p => 
+                const expCount = playersArray.slice(0, idx + 4).filter(p => 
                       p.role && p.role.toLowerCase().includes('exp')
                     ).length;
                     laneLabel = expCount === 1 ? 'EXPLANER' : `EXPLANER ${expCount}`;
                     laneIcon = getLaneIconByRole(actualRole);
-                    isSubstitute = true;
+                isSubstitute = expCount > 1;
                   } else if (actualRole.includes('mid') || actualRole.includes('midlane')) {
                     laneKey = 'mid';
-                    // Count how many mid players we have so far
-                    const midCount = playersArray.slice(0, 6).filter(p => 
+                const midCount = playersArray.slice(0, idx + 4).filter(p => 
                       p.role && p.role.toLowerCase().includes('mid')
                     ).length;
                     laneLabel = midCount === 1 ? 'MIDLANER' : `MIDLANER ${midCount}`;
                     laneIcon = getLaneIconByRole(actualRole);
-                    isSubstitute = true;
+                isSubstitute = midCount > 1;
                   } else if (actualRole.includes('jungle') || actualRole.includes('jungler')) {
                     laneKey = 'jungler';
-                    // Count how many jungler players we have so far
-                    const junglerCount = playersArray.slice(0, 6).filter(p => 
+                const junglerCount = playersArray.slice(0, idx + 4).filter(p => 
                       p.role && p.role.toLowerCase().includes('jungle')
                     ).length;
                     laneLabel = junglerCount === 1 ? 'JUNGLER' : `JUNGLER ${junglerCount}`;
                     laneIcon = getLaneIconByRole(actualRole);
-                    isSubstitute = true;
+                isSubstitute = junglerCount > 1;
                   } else if (actualRole.includes('gold') || actualRole.includes('marksman')) {
                     laneKey = 'gold';
-                    // Count how many gold players we have so far
-                    const goldCount = playersArray.slice(0, 6).filter(p => 
+                const goldCount = playersArray.slice(0, idx + 4).filter(p => 
                       p.role && p.role.toLowerCase().includes('gold')
                     ).length;
                     laneLabel = goldCount === 1 ? 'GOLD LANER' : `GOLD LANER ${goldCount}`;
                     laneIcon = getLaneIconByRole(actualRole);
-                    isSubstitute = true;
+                isSubstitute = goldCount > 1;
+              } else if (actualRole.includes('roam') || actualRole.includes('support')) {
+                laneKey = 'roam';
+                const roamCount = playersArray.slice(0, idx + 4).filter(p => 
+                  p.role && p.role.toLowerCase().includes('roam')
+                ).length;
+                laneLabel = roamCount === 1 ? 'ROAMER' : `ROAMER ${roamCount}`;
+                laneIcon = getLaneIconByRole(actualRole);
+                isSubstitute = roamCount > 1;
                   } else if (actualRole.includes('sub') || actualRole.includes('substitute')) {
                     laneKey = 'sub';
                     laneLabel = 'SUBSTITUTE';
@@ -371,11 +343,11 @@ const PlayerGrid = ({
                     isSubstitute = true;
                   }
                   
-                  const playerRole = playerObj.role;
-                  const playerIdentifier = getPlayerIdentifier(playerName, playerRole);
+              const playerObj = safePlayers.find(p => p.name === player.name) || player;
+              const playerIdentifier = getPlayerIdentifier(player.name, player.role);
                   
                   return (
-                    <div key="substitute" className="flex justify-center">
+                <div key={`right-${idx}`} className="flex justify-center">
                       <PlayerCard 
                         lane={{ 
                           key: laneKey, 
@@ -394,57 +366,15 @@ const PlayerGrid = ({
                             isSubstitute: isSubstitute,
                             originalRole: actualRole
                           }, 
-                          player: { ...playerObj, role: playerRole, identifier: playerIdentifier }, 
+                      player: { ...playerObj, role: player.role, identifier: playerIdentifier }, 
                           hero: getHeroForLaneByLaneKey(laneKey, lanePlayers) 
                         })} 
-                        getPlayerPhoto={(name) => getPlayerPhoto(name, playerRole)} 
+                    getPlayerPhoto={(name) => getPlayerPhoto(name, player.role)} 
                   teamPlayers={teamPlayers}
                 />
               </div>
             );
-                } else {
-                  // Fallback for players without roles
-                  const playerRole = getRoleByLaneKey('sub');
-                  const playerIdentifier = getPlayerIdentifier(playerName, playerRole);
-                  
-                  return (
-                    <div key="substitute" className="flex justify-center">
-                      <PlayerCard 
-                        lane={{ 
-                          key: 'sub', 
-                          label: 'PLAYER 6', 
-                          icon: defaultPlayer,
-                          isSubstitute: true
-                        }} 
-                        player={playerObj || { ...PLAYER, name: playerName, role: playerRole }} 
-                        hero={getHeroForLaneByLaneKey('sub', lanePlayers)} 
-                        onClick={() => onPlayerClick({ 
-                          lane: { 
-                            key: 'sub', 
-                            label: 'PLAYER 6', 
-                            icon: defaultPlayer,
-                            isSubstitute: true
-                          }, 
-                          player: { ...playerObj, role: playerRole, identifier: playerIdentifier }, 
-                          hero: getHeroForLaneByLaneKey('sub', lanePlayers) 
-                        })} 
-                        getPlayerPhoto={(name) => getPlayerPhoto(name, playerRole)} 
-                        teamPlayers={teamPlayers}
-                      />
-                    </div>
-                  );
-                }
-              } else {
-                // No 6th player found
-                return (
-                  <div key="no-substitute" className="flex justify-center">
-                    <div className="w-full max-w-580px h-180px rounded-20px border-2 border-dashed border-gray-400 flex items-center justify-center text-gray-400">
-                      No Substitute Player
-                    </div>
-                  </div>
-                );
-              }
-            })()}
+            })}
           </div>
         </div>
       </div>
