@@ -3,13 +3,14 @@ import React from 'react';
 const SuccessModal = ({ 
   isOpen, 
   message, 
-  onClose 
+  onClose,
+  onRefresh
 }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-90" style={{ pointerEvents: 'auto' }}>
-      <div className="bg-[#23232a] rounded-2xl shadow-2xl p-8 min-w-[400px] max-w-[90vw] flex flex-col items-center z-[10000] border border-purple-500/30">
+    <div className="fixed inset-0 z-[10010] flex items-center justify-center bg-black bg-opacity-90" style={{ pointerEvents: 'auto' }}>
+      <div className="bg-[#23232a] rounded-2xl shadow-2xl p-8 min-w-[400px] max-w-[90vw] flex flex-col items-center z-[10011] border border-purple-500/30">
         {/* Success Icon */}
         <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mb-6 shadow-lg shadow-green-500/30">
           <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -29,7 +30,12 @@ const SuccessModal = ({
         {/* Close Button */}
         <button 
           className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg shadow-purple-500/30"
-          onClick={onClose}
+          onClick={() => {
+            if (onRefresh) {
+              onRefresh();
+            }
+            onClose();
+          }}
         >
           OK
         </button>

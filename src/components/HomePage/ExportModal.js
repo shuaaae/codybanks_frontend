@@ -104,6 +104,17 @@ export default function ExportModal({
     red: [null, null, null, null, null]
   });
 
+  // Add custom lane assignments state for draft analysis
+  const [customLaneAssignments, setCustomLaneAssignments] = useState({
+    blue: [null, null, null, null, null], // [exp, jungler, mid, gold, roam]
+    red: [null, null, null, null, null]
+  });
+
+  // Keep customLaneAssignments in sync with laneAssignments
+  useEffect(() => {
+    setCustomLaneAssignments(laneAssignments);
+  }, [laneAssignments]);
+
   // Add state for lane assignment alert modal
   const [showLaneAlert, setShowLaneAlert] = useState(false);
 
@@ -752,15 +763,15 @@ export default function ExportModal({
     };
 
          // Update the picks state - merge hero picks with lane assignments and player data
-         // CRITICAL FIX: Use the player information already stored in draftPicks
+         // CRITICAL FIX: Use the laneAssignments state for dragged lane assignments
          const bluePicks = draftPicks.blue.filter(hero => hero && hero.name).map((hero, index) => {
            const pick = {
              hero: hero.name,
-             lane: hero.lane || null,
+             lane: laneAssignments.blue[index] || hero.lane || null, // Use dragged lane assignment first
              role: hero.role,
              player: hero.player // Use the player that was stored when the hero was picked
            };
-           console.log(`Blue pick ${index} (lane: ${hero.lane}, player: ${hero.player?.name || 'none'}):`, pick);
+           console.log(`Blue pick ${index} (lane: ${pick.lane}, player: ${hero.player?.name || 'none'}):`, pick);
            return pick;
          });
          
@@ -779,11 +790,11 @@ export default function ExportModal({
          const redPicks = draftPicks.red.filter(hero => hero && hero.name).map((hero, index) => {
            const pick = {
              hero: hero.name,
-             lane: hero.lane || null,
+             lane: laneAssignments.red[index] || hero.lane || null, // Use dragged lane assignment first
              role: hero.role,
-             player: hero.player || { name: `Opponent_${hero.lane || 'unknown'}`, role: hero.lane || 'unknown' } // Add placeholder for opponent team
+             player: hero.player || { name: `Opponent_${laneAssignments.red[index] || hero.lane || 'unknown'}`, role: laneAssignments.red[index] || hero.lane || 'unknown' } // Add placeholder for opponent team
            };
-           console.log(`Red pick ${index} (lane: ${hero.lane}, player: ${pick.player.name}):`, pick);
+           console.log(`Red pick ${index} (lane: ${pick.lane}, player: ${pick.player.name}):`, pick);
            return pick;
          });
 
@@ -831,6 +842,10 @@ export default function ExportModal({
      // CRITICAL: Update playerAssignments state to match actual picks
      setPlayerAssignments(updatedPlayerAssignments);
      console.log('Updated playerAssignments state to match actual picks:', updatedPlayerAssignments);
+
+     // CRITICAL: Save lane assignments to customLaneAssignments for draft analysis
+     setCustomLaneAssignments(laneAssignments);
+     console.log('Saved lane assignments to customLaneAssignments:', laneAssignments);
 
      // Force a re-render to ensure state is updated before closing modal
      setTimeout(() => {
@@ -1698,6 +1713,9 @@ export default function ExportModal({
   const handleLaneSwap = (team, sourceSlotIndex, targetSlotIndex) => {
     if (sourceSlotIndex === targetSlotIndex) return; // No swap needed
     
+    console.log(`Starting lane swap for ${team} team: slot ${sourceSlotIndex} <-> slot ${targetSlotIndex}`);
+    
+    // Update lane assignments
     setLaneAssignments(prev => {
       const newAssignments = { ...prev };
       const teamLanes = [...newAssignments[team]];
@@ -1715,6 +1733,52 @@ export default function ExportModal({
       });
       
       return newAssignments;
+    });
+
+    // CRITICAL: Also swap the hero assignments in draftPicks to maintain hero-lane consistency
+    setDraftPicks(prev => {
+      const currentTeamPicks = [...(prev[team] || [])];
+      
+      // Get the heroes at both slots
+      const sourceHero = currentTeamPicks[sourceSlotIndex];
+      const targetHero = currentTeamPicks[targetSlotIndex];
+      
+      // Swap the heroes between slots
+      currentTeamPicks[sourceSlotIndex] = targetHero;
+      currentTeamPicks[targetSlotIndex] = sourceHero;
+      
+      console.log(`Swapped heroes between slots ${sourceSlotIndex} and ${targetSlotIndex} for ${team} team:`, {
+        sourceHero: sourceHero?.name || 'empty',
+        targetHero: targetHero?.name || 'empty'
+      });
+      
+      return {
+        ...prev,
+        [team]: currentTeamPicks
+      };
+    });
+
+    // CRITICAL: Also swap the player assignments to maintain player-lane consistency
+    setPlayerAssignments(prev => {
+      const currentTeamPlayers = [...(prev[team] || [])];
+      
+      // Get the players at both slots
+      const sourcePlayer = currentTeamPlayers[sourceSlotIndex];
+      const targetPlayer = currentTeamPlayers[targetSlotIndex];
+      
+      // Swap the players between slots
+      currentTeamPlayers[sourceSlotIndex] = targetPlayer;
+      currentTeamPlayers[targetSlotIndex] = sourcePlayer;
+      
+      console.log(`Swapped players between slots ${sourceSlotIndex} and ${targetSlotIndex} for ${team} team:`, {
+        sourcePlayer: sourcePlayer?.name || 'empty',
+        targetPlayer: targetPlayer?.name || 'empty'
+      });
+      
+      return {
+        ...prev,
+        [team]: currentTeamPlayers
+      };
     });
   };
 
@@ -2386,7 +2450,7 @@ export default function ExportModal({
                   handleDraftSlotClick={handleDraftSlotClick}
                   handleDraftSlotEdit={handleDraftSlotEdit}
                   isCompleteDraft={true}
-                  customLaneAssignments={laneAssignments}
+                  customLaneAssignments={customLaneAssignments}
                   onLaneReassign={handleLaneAssignment}
                   onLaneSwap={handleLaneSwap}
                 />

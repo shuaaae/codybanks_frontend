@@ -204,14 +204,17 @@ const SettingsModal = ({
         // Call the parent's onPlayerCreate function
         onPlayerCreate(result.player);
         
+        // Update local players state to include the new player
+        setPlayers(prev => [...prev, result.player]);
+        
         // Reset form
         setNewPlayer({ name: '', role: '', team_id: null });
         
         // Show success message
         onShowSuccess(result.message);
         
-        // Close the modal after successful creation
-        onClose();
+        // Don't close the modal immediately - let user see the updated player list
+        // onClose();
       } else {
         setValidationErrors([result.error]);
         onShowSuccess(result.message);

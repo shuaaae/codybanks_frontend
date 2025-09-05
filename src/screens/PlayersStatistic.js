@@ -503,22 +503,9 @@ function PlayersStatistic() {
     // Force a re-render to ensure the new player is displayed
     setForceUpdate(prev => prev + 1);
 
-    // IMPORTANT: Sync with backend to ensure data consistency
-    try {
-      console.log('Syncing with backend after player creation...');
-      
-      // Use the refresh function to get fresh data from backend
-      const success = await refreshTeamDataFromBackend();
-      
-      if (success) {
-        console.log('Successfully synced with backend after player creation');
-      } else {
-        console.warn('Failed to sync with backend, using local data');
-      }
-    } catch (error) {
-      console.error('Error syncing with backend after player creation:', error);
-      console.log('Continuing with local data update');
-    }
+    // Note: We don't immediately sync with backend to avoid overwriting the newly created player
+    // The backend will be synced during the next periodic refresh or when the user manually refreshes
+    console.log('Player created successfully, using local state update');
   };
 
   // Auto-refresh team data periodically (reduced frequency to prevent excessive calls)
@@ -1124,7 +1111,7 @@ function PlayersStatistic() {
       };
       fetchAllStats();
     }
-  }, [teamPlayers?.id, teamPlayers?.teamName, matchMode, forceUpdate]); // Include matchMode and forceUpdate to refetch when mode changes or forced refresh
+  }, [teamPlayers?.id, teamPlayers?.teamName, teamPlayers?.players_data, teamPlayers?.players, matchMode, forceUpdate]); // Include players data to refetch when players change
 
   // Listen for match updates to refresh player statistics
   useEffect(() => {
@@ -1231,9 +1218,27 @@ function PlayersStatistic() {
         matches.forEach(match => {
           const matchWinner = match.winner;
           
-          // Find the team that matches our current team
-          const ourTeam = match.teams.find(team => team.team === teamPlayers.teamName);
-          if (!ourTeam) return;
+          // Find the team that matches our current team (with fallback matching)
+          let ourTeam = match.teams.find(team => team.team === teamPlayers.teamName);
+          
+          // If exact match not found, try case-insensitive matching
+          if (!ourTeam) {
+            ourTeam = match.teams.find(team => 
+              team.team && team.team.toLowerCase() === teamPlayers.teamName.toLowerCase()
+            );
+          }
+          
+          // If still not found, try partial matching
+          if (!ourTeam) {
+            ourTeam = match.teams.find(team => 
+              team.team && team.team.includes(teamPlayers.teamName)
+            );
+          }
+          
+          if (!ourTeam) {
+            console.log(`No team found for ${teamPlayers.teamName} in match:`, match.teams.map(t => t.team));
+            return;
+          }
 
           const isWinningTeam = ourTeam.team === matchWinner;
           
@@ -1243,10 +1248,38 @@ function PlayersStatistic() {
             ...(ourTeam.picks2 || [])
           ];
 
+          console.log(`Processing match for ${player.name}:`, {
+            matchId: match.id,
+            ourTeam: ourTeam.team,
+            allPicks: allPicks.length,
+            picks: allPicks
+          });
+
           // Check if this player played in this match
           const playerPick = allPicks.find(pick => {
             if (typeof pick === 'string') return false; // Skip string picks
-            return pick.player && pick.player.name === player.name && pick.player.role === player.role;
+            
+            // Try exact match first
+            let matches = pick.player && pick.player.name === player.name && pick.player.role === player.role;
+            
+            // If no exact match, try case-insensitive name matching
+            if (!matches && pick.player) {
+              matches = pick.player.name && 
+                       pick.player.name.toLowerCase() === player.name.toLowerCase() && 
+                       pick.player.role === player.role;
+            }
+            
+            // If still no match, try partial name matching
+            if (!matches && pick.player) {
+              matches = pick.player.name && 
+                       pick.player.name.includes(player.name) && 
+                       pick.player.role === player.role;
+            }
+            
+            if (matches) {
+              console.log(`Found player pick for ${player.name}:`, pick);
+            }
+            return matches;
           });
 
           if (playerPick) {
@@ -1300,7 +1333,8 @@ function PlayersStatistic() {
           wins: playerStats.wins,
           losses: playerStats.losses,
           win_rate: playerStats.win_rate,
-          heroes_count: Object.keys(playerStats.hero_stats).length
+          heroes_count: Object.keys(playerStats.hero_stats).length,
+          hero_stats: playerStats.hero_stats
         });
       }
 
@@ -1662,6 +1696,14 @@ function PlayersStatistic() {
     return found ? found.hero : null;
   }
 
+  // Refresh function for success modal
+  const handleRefreshData = () => {
+    console.log('Refreshing page after player operation...');
+    
+    // Reload the entire page to ensure all data is fresh
+    window.location.reload();
+  };
+
   // Data recovery and sync functions
   const syncTeamPlayers = async () => {
     if (!teamPlayers?.id) {
@@ -1916,7 +1958,7 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
   };
 
   // Player CRUD operation handlers
-  const handlePlayerUpdate = (updatedPlayer) => {
+  const handlePlayerUpdate = async (updatedPlayer) => {
     console.log('Updated player data:', updatedPlayer);
     
     // Update players array
@@ -1945,6 +1987,18 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
 
     // Refresh lanePlayers to show all current team players
     refreshLanePlayers();
+    
+    // Force a re-render to ensure the updated player is displayed
+    setForceUpdate(prev => prev + 1);
+
+    // Recalculate player statistics to reflect the updated player data
+    try {
+      console.log('Recalculating player statistics after player update...');
+      await calculatePlayerStatsFromMatches();
+      console.log('Player statistics recalculated successfully after update');
+    } catch (error) {
+      console.error('Error recalculating player statistics after player update:', error);
+    }
   };
 
   const handlePlayerDelete = async (playerIdOrPlayer) => {
@@ -2373,6 +2427,7 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
             teamName={getCurrentTeamName()} 
             teamLogo={getTeamLogo()} 
             onEditPlayers={() => setShowSettingsModal(true)}
+            onRefresh={handleRefreshData}
           />
         </div>
         
@@ -2504,6 +2559,7 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
         isOpen={showSuccessModal}
         message={successMessage}
         onClose={() => setShowSuccessModal(false)}
+        onRefresh={handleRefreshData}
       />
 
       {/* Settings Modal */}

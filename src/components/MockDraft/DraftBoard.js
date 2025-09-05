@@ -95,6 +95,25 @@ export default function DraftBoard({
     }
   }, []);
 
+  // Hero name normalization function to handle different naming conventions
+  const normalizeHeroName = useCallback((name) => {
+    if (!name) return '';
+    
+    // Convert to lowercase and handle common variations
+    let normalized = name.toLowerCase().trim();
+    
+    // Handle specific hero name variations
+    const nameMappings = {
+      'chang_e': 'chang\'e',
+      'chang\'e': 'chang\'e',
+      'chang e': 'chang\'e',
+      'chang-e': 'chang\'e',
+      'chang e': 'chang\'e'
+    };
+    
+    return nameMappings[normalized] || normalized;
+  }, []);
+
   // Process team picks with winrate data
   const processTeamPicks = useCallback((teamPicks, heroRankData) => {
     return teamPicks.map(heroPick => {
@@ -104,10 +123,26 @@ export default function DraftBoard({
         return { hero, winrate: 0, heroData: null };
       }
       
-      // Find rank data by hero name
+      // Normalize hero name for better matching
+      const normalizedHeroName = normalizeHeroName(hero.name);
+      
+      // Find rank data by hero name - try multiple matching strategies
       let rankData = heroRankData.find(h => h.hero_name === hero.name);
       if (!rankData) {
         rankData = heroRankData.find(h => h.hero_name.toLowerCase() === hero.name.toLowerCase());
+      }
+      if (!rankData) {
+        rankData = heroRankData.find(h => h.hero_name === normalizedHeroName);
+      }
+      if (!rankData) {
+        rankData = heroRankData.find(h => h.hero_name.toLowerCase() === normalizedHeroName.toLowerCase());
+      }
+      if (!rankData) {
+        // Try partial matching for names with special characters
+        rankData = heroRankData.find(h => 
+          h.hero_name.toLowerCase().replace(/[^a-z0-9]/g, '') === 
+          hero.name.toLowerCase().replace(/[^a-z0-9]/g, '')
+        );
       }
       
       return {
@@ -116,7 +151,7 @@ export default function DraftBoard({
         heroData: rankData
       };
     });
-  }, []);
+  }, [normalizeHeroName]);
 
   // Fetch hero data and process picks when draft is finished
   useEffect(() => {

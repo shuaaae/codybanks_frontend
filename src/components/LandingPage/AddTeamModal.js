@@ -15,8 +15,6 @@ export default function AddTeamModal({
   handleLogoChange,
   handlePlayerChange,
   handleTeamNameChange,
-  handleAddPlayer,
-  handleRoleChange,
   handleRemovePlayer,
   handleConfirm,
   isCreatingTeam
@@ -128,72 +126,66 @@ export default function AddTeamModal({
             <p className="text-gray-400 text-xs">Assign roles to each team member</p>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-            {players.map((player, idx) => (
-              <div key={idx} className="relative group">
-                <div className="bg-gray-800/60 backdrop-blur-sm border border-gray-600 rounded-xl p-3 hover:border-blue-400/50 transition-all duration-200">
-                  <input
-                    type="text"
-                    className={`w-full border rounded-lg py-2 px-3 text-center font-medium mb-2 outline-none transition-all duration-200 text-sm ${
-                      isCreatingTeam 
-                        ? 'bg-gray-600/60 border-gray-500 text-gray-400 cursor-not-allowed' 
-                        : 'bg-gray-700/80 border-gray-500 text-white focus:ring-2 focus:ring-blue-400 focus:border-blue-400'
-                    } placeholder-gray-400`}
-                    placeholder="Player Name"
-                    value={player.name}
-                    onChange={e => handlePlayerChange(idx, e.target.value)}
-                    disabled={isCreatingTeam}
-                  />
-                  <select
-                    className={`w-full border rounded-lg py-2 px-3 text-center text-xs outline-none transition-all duration-200 ${
-                      isCreatingTeam 
-                        ? 'bg-gray-600/60 border-gray-500 text-gray-400 cursor-not-allowed' 
-                        : 'bg-gray-700/80 border-gray-500 text-gray-200 focus:ring-2 focus:ring-blue-400 focus:border-blue-400'
-                    }`}
-                    value={player.role}
-                    onChange={e => handleRoleChange(idx, e.target.value)}
-                    disabled={isCreatingTeam}
-                  >
-                    <option value="">Select Lane</option>
-                    {laneRoles.map(lane => (
-                      <option key={lane.key} value={lane.key}>{lane.label}</option>
-                    ))}
-                  </select>
-                  
-                  {idx >= defaultRoles.length && (
-                    <button
-                      className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-200 ${
+          <div className="space-y-3 mb-4">
+            {/* First 4 players in 2x2 grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {players.slice(0, 4).map((player, idx) => (
+                <div key={idx} className="relative group">
+                  <div className="bg-gray-800/60 backdrop-blur-sm border border-gray-600 rounded-xl p-3 hover:border-blue-400/50 transition-all duration-200">
+                    <input
+                      type="text"
+                      className={`w-full border rounded-lg py-2 px-3 text-center font-medium mb-2 outline-none transition-all duration-200 text-sm ${
                         isCreatingTeam 
-                          ? 'bg-gray-500 cursor-not-allowed' 
-                          : 'bg-red-500 hover:bg-red-600 text-white hover:scale-110'
-                      }`}
-                      onClick={() => !isCreatingTeam && handleRemovePlayer(idx)}
-                      title="Remove player"
+                          ? 'bg-gray-600/60 border-gray-500 text-gray-400 cursor-not-allowed' 
+                          : 'bg-gray-700/80 border-gray-500 text-white focus:ring-2 focus:ring-blue-400 focus:border-blue-400'
+                      } placeholder-gray-400`}
+                      placeholder="Player Name"
+                      value={player.name}
+                      onChange={e => handlePlayerChange(idx, e.target.value)}
                       disabled={isCreatingTeam}
-                    >
-                      ×
-                    </button>
-                  )}
+                    />
+                    <div className={`w-full border rounded-lg py-2 px-3 text-center text-xs ${
+                      isCreatingTeam 
+                        ? 'bg-gray-600/60 border-gray-500 text-gray-400' 
+                        : 'bg-gray-700/80 border-gray-500 text-gray-200'
+                    }`}>
+                      {laneRoles.find(lane => lane.key === player.role)?.label || 'Select Lane'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            {/* Last player centered */}
+            <div className="flex justify-center">
+              <div className="w-full max-w-md">
+                <div className="relative group">
+                  <div className="bg-gray-800/60 backdrop-blur-sm border border-gray-600 rounded-xl p-3 hover:border-blue-400/50 transition-all duration-200">
+                    <input
+                      type="text"
+                      className={`w-full border rounded-lg py-2 px-3 text-center font-medium mb-2 outline-none transition-all duration-200 text-sm ${
+                        isCreatingTeam 
+                          ? 'bg-gray-600/60 border-gray-500 text-gray-400 cursor-not-allowed' 
+                          : 'bg-gray-700/80 border-gray-500 text-white focus:ring-2 focus:ring-blue-400 focus:border-blue-400'
+                      } placeholder-gray-400`}
+                      placeholder="Player Name"
+                      value={players[4]?.name || ''}
+                      onChange={e => handlePlayerChange(4, e.target.value)}
+                      disabled={isCreatingTeam}
+                    />
+                    <div className={`w-full border rounded-lg py-2 px-3 text-center text-xs ${
+                      isCreatingTeam 
+                        ? 'bg-gray-600/60 border-gray-500 text-gray-400' 
+                        : 'bg-gray-700/80 border-gray-500 text-gray-200'
+                    }`}>
+                      {laneRoles.find(lane => lane.key === players[4]?.role)?.label || 'Select Lane'}
+                    </div>
+                  </div>
                 </div>
               </div>
-            ))}
+            </div>
           </div>
           
-          {/* Add More Player Button */}
-          <div className="mb-4">
-            <button
-              className={`w-full border rounded-xl py-3 px-4 font-semibold text-sm flex items-center justify-center transition-all duration-200 ${
-                isCreatingTeam 
-                  ? 'bg-gray-600/60 border-gray-500 text-gray-400 cursor-not-allowed' 
-                  : 'bg-gradient-to-r from-gray-700 to-gray-600 hover:from-gray-600 hover:to-gray-500 border-gray-500 text-white hover:scale-105'
-              }`}
-              onClick={handleAddPlayer}
-              disabled={isCreatingTeam}
-            >
-              <span className="mr-2">Add More Player</span>
-              <span className="text-blue-400 text-lg font-bold">+</span>
-            </button>
-          </div>
         </div>
         
         {/* Confirm Button */}

@@ -166,26 +166,13 @@ export default function LandingPage() {
     return roleMap[normalizedRole] || normalizedRole;
   };
 
-  const handleAddPlayer = () => {
-    // Allow multiple players with the same role - default to first role
-    // Users can change the role in the dropdown if they want duplicates
-    const defaultRole = defaultRoles[0] || 'sub';
-    
-    setPlayers([...players, { role: defaultRole, name: "" }]);
-  };
 
-  const handleRoleChange = (idx, value) => {
-    // Don't allow empty roles
-    if (!value.trim()) return;
-    
-    // Normalize the role value
-    const normalizedRole = normalizeRole(value);
-    
-    setPlayers(players.map((p, i) => i === idx ? { ...p, role: normalizedRole } : p));
-  };
 
   const handleRemovePlayer = (idx) => {
-    setPlayers(players.filter((_, i) => i !== idx));
+    // Only allow removing players beyond the first 5 (default roles)
+    if (idx >= defaultRoles.length) {
+      setPlayers(players.filter((_, i) => i !== idx));
+    }
   };
 
   const handleLogout = () => {
@@ -959,7 +946,7 @@ export default function LandingPage() {
               <a href="https://www.facebook.com/mnski.Lenardkit" target="_blank" rel="noreferrer" aria-label="Coach on Facebook" style={{ width: 44, height: 44, borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, rgba(59,130,246,0.25), rgba(59,130,246,0.05))', color: '#93c5fd', border: '1px solid rgba(59,130,246,0.35)' }}>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M22 12a10 10 0 1 0-11.5 9.9v-7h-2v-3h2v-2.3c0-2 1.2-3.1 3-3.1.9 0 1.8.1 1.8.1v2h-1c-1 0-1.3.6-1.3 1.2V12h2.3l-.4 3h-1.9v7A10 10 0 0 0 22 12z"/></svg>
               </a>
-              <a href="https://www.instagram.com/mlbb.codybanks/?hl=zh-cn" target="_blank" rel="noreferrer" aria-label="Coach on Instagram" style={{ width: 44, height: 44, borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, rgba(236,72,153,0.25), rgba(236,72,153,0.05))', color: '#f9a8d4', border: '1px solid rgba(236,72,153,0.35)' }}>
+              <a href="https://www.instagram.com/mlbb.codybanks/" target="_blank" rel="noreferrer" aria-label="Coach on Instagram" style={{ width: 44, height: 44, borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, rgba(236,72,153,0.25), rgba(236,72,153,0.05))', color: '#f9a8d4', border: '1px solid rgba(236,72,153,0.35)' }}>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M7 2C4.2 2 2 4.2 2 7v10c0 2.8 2.2 5 5 5h10c2.8 0 5-2.2 5-5V7c0-2.8-2.2-5-5-5H7zm10 2c1.7 0 3 1.3 3 3v10c0 1.7-1.3 3-3 3H7c-1.7 0-3-1.3-3-3V7c0-1.7 1.3-3 3-3h10zm-5 3a5 5 0 100 10 5 5 0 000-10zm6-1a1 1 0 100 2 1 1 0 000-2zm-6 3a3 3 0 110 6 3 3 0 010-6z"/></svg>
               </a>
               <a href="tel:09089039576" aria-label="Call Coach" style={{ width: 44, height: 44, borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, rgba(250,204,21,0.25), rgba(250,204,21,0.05))', color: '#fde68a', border: '1px solid rgba(250,204,21,0.35)' }}>
@@ -1030,8 +1017,6 @@ export default function LandingPage() {
         handleLogoChange={handleLogoChange}
         handlePlayerChange={handlePlayerChange}
         handleTeamNameChange={handleTeamNameChange}
-        handleAddPlayer={handleAddPlayer}
-        handleRoleChange={handleRoleChange}
         handleRemovePlayer={handleRemovePlayer}
         handleConfirm={handleConfirm}
         isCreatingTeam={isCreatingTeam}

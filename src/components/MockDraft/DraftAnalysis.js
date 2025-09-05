@@ -133,7 +133,8 @@ export default function DraftAnalysis({
       'alice': ['mage'],
       'aurora': ['mage'],
       'cecilion': ['mage'],
-      'chang_e': ['mage'],
+      'chang\'e': ['mage'],
+      'chang_e': ['mage'], // Fallback for underscore version
       'cyclops': ['mage'],
       'eudora': ['mage'],
       'gord': ['mage'],
@@ -291,7 +292,8 @@ export default function DraftAnalysis({
       'Alice': 'Alice.webp',
       'Aurora': 'Aurora.webp',
       'Cecilion': 'Cecilion.webp',
-      'Chang_e': 'Chang_e.webp',
+      'Chang\'e': 'Chang_e.webp',
+      'Chang_e': 'Chang_e.webp', // Fallback for underscore version
       'Cyclops': 'Cyclops.webp',
       'Eudora': 'Eudora.webp',
       'Gord': 'Gord.webp',
@@ -680,6 +682,25 @@ export default function DraftAnalysis({
     return heroDatabase;
   };
 
+  // Hero name normalization function to handle different naming conventions
+  const normalizeHeroName = useCallback((name) => {
+    if (!name) return '';
+    
+    // Convert to lowercase and handle common variations
+    let normalized = name.toLowerCase().trim();
+    
+    // Handle specific hero name variations
+    const nameMappings = {
+      'chang_e': 'chang\'e',
+      'chang\'e': 'chang\'e',
+      'chang e': 'chang\'e',
+      'chang-e': 'chang\'e',
+      'chang e': 'chang\'e'
+    };
+    
+    return nameMappings[normalized] || normalized;
+  }, []);
+
   const analyzeTeamPicks = useCallback((teamPicks, heroRankData, heroes) => {
     const analysis = {
       picks: [],
@@ -700,10 +721,44 @@ export default function DraftAnalysis({
         return;
       }
       
-      // Find rank data by hero name - try exact match first, then case-insensitive
+      // Normalize hero name for better matching
+      const normalizedHeroName = normalizeHeroName(hero.name);
+      
+      // Debug logging for Chang'e specifically
+      if (hero.name.toLowerCase().includes('chang')) {
+        console.log('Chang\'e hero processing:', {
+          originalName: hero.name,
+          normalizedName: normalizedHeroName,
+          availableHeroes: heroRankData.filter(h => h.hero_name.toLowerCase().includes('chang')).map(h => h.hero_name)
+        });
+      }
+      
+      // Find rank data by hero name - try multiple matching strategies
       let rankData = heroRankData.find(h => h.hero_name === hero.name);
       if (!rankData) {
         rankData = heroRankData.find(h => h.hero_name.toLowerCase() === hero.name.toLowerCase());
+      }
+      if (!rankData) {
+        rankData = heroRankData.find(h => h.hero_name === normalizedHeroName);
+      }
+      if (!rankData) {
+        rankData = heroRankData.find(h => h.hero_name.toLowerCase() === normalizedHeroName.toLowerCase());
+      }
+      if (!rankData) {
+        // Try partial matching for names with special characters
+        rankData = heroRankData.find(h => 
+          h.hero_name.toLowerCase().replace(/[^a-z0-9]/g, '') === 
+          hero.name.toLowerCase().replace(/[^a-z0-9]/g, '')
+        );
+      }
+      
+      // Debug logging for Chang'e match result
+      if (hero.name.toLowerCase().includes('chang')) {
+        console.log('Chang\'e match result:', {
+          found: !!rankData,
+          matchedName: rankData?.hero_name,
+          winrate: rankData?.win_rate
+        });
       }
       
       if (rankData) {
@@ -812,10 +867,10 @@ export default function DraftAnalysis({
       if (!analysis || draftDataChanged) {
         console.log('Running draft analysis - analysis exists:', !!analysis, 'draft changed:', draftDataChanged);
         setLastDraftData(draftData);
-        analyzeDraft();
+      analyzeDraft();
       } else {
         console.log('Using cached analysis data');
-      }
+    }
     }
   }, [isOpen, draftData, analyzeDraft, analysis, lastDraftData]);
 

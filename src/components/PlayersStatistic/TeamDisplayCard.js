@@ -1,7 +1,7 @@
 import React from 'react';
 import { FaUsers, FaChartLine, FaTrophy, FaStar } from 'react-icons/fa';
 
-const TeamDisplayCard = ({ teamName, teamLogo, onEditPlayers }) => {
+const TeamDisplayCard = ({ teamName, teamLogo, onEditPlayers, onRefresh }) => {
   return (
     <div className="relative group mb-4 w-full max-w-4xl mx-auto">
       {/* Main Glassmorphism Card */}
@@ -25,18 +25,31 @@ const TeamDisplayCard = ({ teamName, teamLogo, onEditPlayers }) => {
           `
         }}
       >
-                 {/* Player Management Icon - Top Right */}
-         {onEditPlayers && (
-           <button
-             onClick={onEditPlayers}
-             className="absolute top-4 right-4 z-20 w-10 h-10 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white flex items-center justify-center transition-all duration-200 transform hover:scale-110 hover:rotate-12 shadow-lg shadow-purple-500/30 group-hover:shadow-purple-500/50"
-             title="Player Management"
-           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-        )}
+                 {/* Player Management and Refresh Icons - Top Right */}
+         <div className="absolute top-4 right-4 z-20 flex space-x-2">
+           {onRefresh && (
+             <button
+               onClick={onRefresh}
+               className="w-10 h-10 rounded-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white flex items-center justify-center transition-all duration-200 transform hover:scale-110 hover:rotate-12 shadow-lg shadow-green-500/30 group-hover:shadow-green-500/50"
+               title="Refresh Page"
+             >
+               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+               </svg>
+             </button>
+           )}
+           {onEditPlayers && (
+             <button
+               onClick={onEditPlayers}
+               className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white flex items-center justify-center transition-all duration-200 transform hover:scale-110 hover:rotate-12 shadow-lg shadow-purple-500/30 group-hover:shadow-purple-500/50"
+               title="Player Management"
+             >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+          )}
+         </div>
 
         {/* Animated Border Glow */}
         <div 
