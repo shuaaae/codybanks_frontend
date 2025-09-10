@@ -214,7 +214,7 @@ export default function DraftBoard({
                     handleDraftSlotEdit={handleDraftSlotEdit}
                     isCompleteDraft={isCompleteDraft}
                     customLaneAssignments={customLaneAssignments}
-                    onLaneReassign={onLaneReassign}
+                    onLaneSwap={onLaneSwap}
                     heroList={heroList}
                   />
                 </div>
@@ -257,7 +257,7 @@ export default function DraftBoard({
                     handleDraftSlotEdit={handleDraftSlotEdit}
                     isCompleteDraft={isCompleteDraft}
                     customLaneAssignments={customLaneAssignments}
-                    onLaneReassign={onLaneReassign}
+                    onLaneSwap={onLaneSwap}
                     heroList={heroList}
                   />
                 </div>
@@ -277,7 +277,6 @@ export default function DraftBoard({
               handleDraftSlotEdit={handleDraftSlotEdit}
               isCompleteDraft={isCompleteDraft}
               customLaneAssignments={customLaneAssignments}
-              onLaneReassign={onLaneReassign}
               onLaneSwap={onLaneSwap}
               heroList={heroList}
             />
@@ -295,7 +294,6 @@ export default function DraftBoard({
               handleDraftSlotEdit={handleDraftSlotEdit}
               isCompleteDraft={isCompleteDraft}
               customLaneAssignments={customLaneAssignments}
-              onLaneReassign={onLaneReassign}
               onLaneSwap={onLaneSwap}
               heroList={heroList}
             />
@@ -366,7 +364,7 @@ export default function DraftBoard({
                 <div className="flex justify-center gap-8 w-full max-w-5xl">
                   <div className="flex-1 max-w-md">
                     <div className="bg-black/30 backdrop-blur-sm rounded-lg p-4 border border-blue-500/30">
-                      <h3 className="text-xl font-semibold text-blue-400 mb-4 text-center">Blue Team</h3>
+                      <h3 className="text-xl font-semibold text-blue-400 mb-4 text-center">{blueTeamName || 'Blue Team'}</h3>
                       <div className="space-y-2">
                         {picks.blue.map((hero, index) => (
                           <div key={index} className="flex items-center justify-between p-2 rounded bg-gray-800/40">
@@ -393,7 +391,7 @@ export default function DraftBoard({
                   
                   <div className="flex-1 max-w-md">
                     <div className="bg-black/30 backdrop-blur-sm rounded-lg p-4 border border-red-500/30">
-                      <h3 className="text-xl font-semibold text-red-400 mb-4 text-center">Red Team</h3>
+                      <h3 className="text-xl font-semibold text-red-400 mb-4 text-center">{redTeamName || 'Red Team'}</h3>
                       <div className="space-y-2">
                         {picks.red.map((hero, index) => (
                           <div key={index} className="flex items-center justify-between p-2 rounded bg-gray-800/40">
@@ -421,10 +419,10 @@ export default function DraftBoard({
               ) : (
                 /* Actual Team Tables with Data */
                 <div className="flex justify-center gap-8 w-full max-w-5xl">
-                  {/* Blue Team Table */}
+                  {/* {blueTeamName || 'Blue Team'} Table */}
                   <div className="flex-1 max-w-md">
                     <div className="bg-black/30 backdrop-blur-sm rounded-lg p-4 border border-blue-500/30">
-                      <h3 className="text-xl font-semibold text-blue-400 mb-4 text-center">Blue Team</h3>
+                      <h3 className="text-xl font-semibold text-blue-400 mb-4 text-center">{blueTeamName || 'Blue Team'}</h3>
                       <div className="space-y-2">
                         {processedPicks.blue.map((pickData, index) => (
                           <div key={index} className="flex items-center justify-between p-2 rounded bg-gray-800/40 hover:bg-gray-700/40 transition-colors">
@@ -469,10 +467,10 @@ export default function DraftBoard({
                     </div>
                   </div>
                   
-                  {/* Red Team Table */}
+                  {/* {redTeamName || 'Red Team'} Table */}
                   <div className="flex-1 max-w-md">
                     <div className="bg-black/30 backdrop-blur-sm rounded-lg p-4 border border-red-500/30">
-                      <h3 className="text-xl font-semibold text-red-400 mb-4 text-center">Red Team</h3>
+                      <h3 className="text-xl font-semibold text-red-400 mb-4 text-center">{redTeamName || 'Red Team'}</h3>
                       <div className="space-y-2">
                         {processedPicks.red.map((pickData, index) => (
                           <div key={index} className="flex items-center justify-between p-2 rounded bg-gray-800/40 hover:bg-gray-700/40 transition-colors">

@@ -46,18 +46,103 @@ export default function MockDraft() {
   const [currentDraftData, setCurrentDraftData] = useState(null);
   const [showSaveSuccessModal, setShowSaveSuccessModal] = useState(false);
   
+  // Draft restoration state
+  const [draftRestored, setDraftRestored] = useState(false);
+  
   // Hero slot editing state
   const [selectedDraftSlot, setSelectedDraftSlot] = useState(null); // { type: 'ban'|'pick', team: 'blue'|'red', index: number }
   const [draftSlotSearch, setDraftSlotSearch] = useState(''); // For draft slot editing modal
   
-  // Custom lane assignments for pick slots - start with null (unassigned)
+  // Custom lane assignments for pick slots - start with fixed lane order
   const [customLaneAssignments, setCustomLaneAssignments] = useState({
-    blue: [null, null, null, null, null], // Start unassigned
-    red: [null, null, null, null, null]   // Start unassigned
+    blue: ['exp', 'jungler', 'mid', 'gold', 'roam'], // Fixed lane order
+    red: ['exp', 'jungler', 'mid', 'gold', 'roam']   // Fixed lane order
   });
 
   // User session timeout: 30 minutes
   useSessionTimeout(30, 'currentUser', '/');
+
+  // Load saved draft data on component mount
+  useEffect(() => {
+    const loadSavedDraft = () => {
+      try {
+        const savedDraft = localStorage.getItem('mockDraftData');
+        if (savedDraft) {
+          const draftData = JSON.parse(savedDraft);
+          
+          // Check if the saved draft is completed (has all picks and bans)
+          const isCompleted = draftData.bluePicks && draftData.redPicks && 
+                             draftData.blueBans && draftData.redBans &&
+                             draftData.bluePicks.every(pick => pick !== null) &&
+                             draftData.redPicks.every(pick => pick !== null) &&
+                             draftData.blueBans.every(ban => ban !== null) &&
+                             draftData.redBans.every(ban => ban !== null);
+          
+          // Restore completed drafts regardless of whether they've been consumed
+          if (isCompleted) {
+            if (draftData.consumed) {
+              console.log('🔄 Restoring previously consumed draft from localStorage');
+            } else {
+              console.log('🔄 Restoring completed draft from localStorage');
+            }
+            
+            // Restore all draft state
+            setBans({
+              blue: draftData.blueBans || Array(5).fill(null),
+              red: draftData.redBans || Array(5).fill(null)
+            });
+            setPicks({
+              blue: draftData.bluePicks || Array(5).fill(null),
+              red: draftData.redPicks || Array(5).fill(null)
+            });
+            setBlueTeamName(draftData.blueTeamName || '');
+            setRedTeamName(draftData.redTeamName || '');
+            setCustomLaneAssignments(draftData.customLaneAssignments || {
+              blue: ['exp', 'jungler', 'mid', 'gold', 'roam'],
+              red: ['exp', 'jungler', 'mid', 'gold', 'roam']
+            });
+            
+            // Set draft as finished
+            setDraftFinished(true);
+            setCurrentStep(19); // Set to final step (5 bans + 10 picks + 4 additional steps)
+            setDraftRestored(true);
+            
+            console.log('✅ Completed draft restored successfully');
+            
+            // Hide the restoration message after 3 seconds
+            setTimeout(() => {
+              setDraftRestored(false);
+            }, 3000);
+          } else {
+            console.log('📝 Incomplete draft found, not restoring');
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error loading saved draft:', error);
+      }
+    };
+
+    loadSavedDraft();
+  }, []);
+
+  // Save draft data whenever it changes (but only if draft is completed)
+  useEffect(() => {
+    if (draftFinished) {
+      const draftData = {
+        blueTeamName: blueTeamName || 'Blue Team',
+        redTeamName: redTeamName || 'Red Team',
+        bluePicks: picks.blue,
+        redPicks: picks.red,
+        blueBans: bans.blue,
+        redBans: bans.red,
+        customLaneAssignments: customLaneAssignments,
+        timestamp: Date.now()
+      };
+      
+      localStorage.setItem('mockDraftData', JSON.stringify(draftData));
+      console.log('💾 Draft data saved to localStorage');
+    }
+  }, [draftFinished, picks, bans, blueTeamName, redTeamName, customLaneAssignments]);
 
   // Check if user is logged in and fetch fresh data from database
   useEffect(() => {
@@ -303,11 +388,22 @@ export default function MockDraft() {
     setBans({ blue: Array(5).fill(null), red: Array(5).fill(null) });
     setPicks({ blue: Array(5).fill(null), red: Array(5).fill(null) });
     setDraftFinished(false); // Reset draft finished state
-    // Reset lane assignments to unassigned
+    setBlueTeamName('');
+    setRedTeamName('');
+    
+    // Reset lane assignments to fixed lane order
     setCustomLaneAssignments({
-      blue: [null, null, null, null, null],
-      red: [null, null, null, null, null]
+      blue: ['exp', 'jungler', 'mid', 'gold', 'roam'],
+      red: ['exp', 'jungler', 'mid', 'gold', 'roam']
     });
+    
+    // Clear saved draft data from localStorage
+    localStorage.removeItem('mockDraftData');
+    console.log('🗑️ Draft data cleared from localStorage');
+    
+    // Close draft analysis modal if it's open
+    setShowDraftAnalysis(false);
+    console.log('🗑️ Draft analysis cleared');
   }
   
   // Handle lane reassignment
@@ -327,8 +423,9 @@ export default function MockDraft() {
   function handleLaneSwap(team, sourceSlotIndex, targetSlotIndex) {
     if (sourceSlotIndex === targetSlotIndex) return; // No swap needed
     
-    console.log(`MockDraft: Swapping lanes between slots ${sourceSlotIndex} and ${targetSlotIndex} for ${team} team`);
+    console.log(`MockDraft: Swapping LANES ONLY between slots ${sourceSlotIndex} and ${targetSlotIndex} for ${team} team`);
     
+    // Swap lane assignments ONLY - keep heroes in their original positions
     setCustomLaneAssignments(prev => {
       const newAssignments = { ...prev };
       const teamLanes = [...newAssignments[team]];
@@ -340,7 +437,7 @@ export default function MockDraft() {
       
       newAssignments[team] = teamLanes;
       
-      console.log(`MockDraft: Lane swap completed:`, {
+      console.log(`MockDraft: Lane swap completed (heroes stay in place):`, {
         sourceLane: temp,
         targetLane: teamLanes[sourceSlotIndex],
         newAssignments: newAssignments
@@ -348,33 +445,30 @@ export default function MockDraft() {
       
       return newAssignments;
     });
+
+    // DO NOT swap heroes - they should stay in their original positions
+    // The lane assignment change will automatically update the role for each hero
+    console.log(`MockDraft: Heroes remain in their original positions, only lane roles are swapped`);
   }
   
-  // Check if any lanes have been assigned
+  // Check if any lanes have been modified from the default order
   const isLaneOrderModified = () => {
-    const unassignedState = [null, null, null, null, null];
+    const defaultState = ['exp', 'jungler', 'mid', 'gold', 'roam'];
     return (
-      JSON.stringify(customLaneAssignments.blue) !== JSON.stringify(unassignedState) ||
-      JSON.stringify(customLaneAssignments.red) !== JSON.stringify(unassignedState)
+      JSON.stringify(customLaneAssignments.blue) !== JSON.stringify(defaultState) ||
+      JSON.stringify(customLaneAssignments.red) !== JSON.stringify(defaultState)
     );
   };
 
-  // Check if all lane assignments are completed for both teams
+  // Check if all lane assignments are completed for both teams (always true with fixed lanes)
   const areAllLanesAssigned = () => {
-    const blueLanes = customLaneAssignments.blue;
-    const redLanes = customLaneAssignments.red;
-    
-    // Check if all 5 lanes are assigned for both teams (no null values)
-    const blueComplete = blueLanes.every(lane => lane !== null);
-    const redComplete = redLanes.every(lane => lane !== null);
-    
-    return blueComplete && redComplete;
+    return true; // With fixed lanes, all lanes are always assigned
   };
 
   // Check if lane assignments are valid (no duplicates within a team)
   const areLaneAssignmentsValid = () => {
-    const blueLanes = customLaneAssignments.blue.filter(lane => lane !== null);
-    const redLanes = customLaneAssignments.red.filter(lane => lane !== null);
+    const blueLanes = customLaneAssignments.blue;
+    const redLanes = customLaneAssignments.red;
     
     // Check for duplicates within each team
     const blueHasDuplicates = blueLanes.length !== new Set(blueLanes).size;
@@ -385,12 +479,6 @@ export default function MockDraft() {
 
   // Start draft
   function handleStartDraft() {
-    // Check if all lanes are assigned before starting
-    if (!areAllLanesAssigned()) {
-      alert('Please assign all lanes for both teams before starting the draft.');
-      return;
-    }
-    
     // Check if lane assignments are valid (no duplicates)
     if (!areLaneAssignmentsValid()) {
       alert('Please ensure each lane is assigned only once per team.');
@@ -435,18 +523,6 @@ export default function MockDraft() {
   // Advance step after pick/ban
   function handleHeroSelect(hero) {
     if (currentStep === -1 || draftFinished) return;
-    
-    // Check if all lanes are assigned before allowing hero selection
-    if (!areAllLanesAssigned()) {
-      alert('Please assign all lanes for both teams before selecting heroes.');
-      return;
-    }
-    
-    // Check if lane assignments are valid (no duplicates)
-    if (!areLaneAssignmentsValid()) {
-      alert('Please ensure each lane is assigned only once per team.');
-      return;
-    }
     
     const step = draftSteps[currentStep];
     if (!step) return;
@@ -718,6 +794,26 @@ export default function MockDraft() {
     setShowDraftAnalysis(true);
   };
 
+  // Handle navigation to complete draft with current draft data
+  const handleCompleteDraft = () => {
+    // Store the current draft data in localStorage so it can be used in the complete draft
+    const draftData = {
+      blueTeamName: blueTeamName || 'Blue Team',
+      redTeamName: redTeamName || 'Red Team',
+      bluePicks: picks.blue,
+      redPicks: picks.red,
+      blueBans: bans.blue,
+      redBans: bans.red,
+      customLaneAssignments: customLaneAssignments,
+      timestamp: Date.now()
+    };
+    
+    localStorage.setItem('mockDraftData', JSON.stringify(draftData));
+    
+    // Navigate to homepage where the complete draft can be accessed
+    navigate('/');
+  };
+
   return (
     <div className="min-h-screen flex flex-col" style={{ background: `linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url(${navbarBg}) center/cover, #181A20` }}>
       <PageTitle title="Mock Draft" />
@@ -728,6 +824,16 @@ export default function MockDraft() {
         onLogout={handleLogout}
         onShowProfile={() => setShowProfileModal(true)}
       />
+
+      {/* Draft Restoration Notification */}
+      {draftRestored && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-2 animate-fadeIn">
+          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          </svg>
+          <span className="font-medium">Draft restored from previous session</span>
+        </div>
+      )}
 
       {/* Main Draft Board */}
       <div className="side-sections flex justify-center items-center min-h-[calc(100vh-80px)] flex-1" style={{ marginTop: 8 }}>
@@ -776,6 +882,7 @@ export default function MockDraft() {
             areLaneAssignmentsValid={areLaneAssignmentsValid()}
             onShowDraftHistory={() => setShowDraftHistory(true)}
             onShowDraftAnalysis={handleShowDraftAnalysis}
+            onCompleteDraft={handleCompleteDraft}
           />
         </div>
       </div>

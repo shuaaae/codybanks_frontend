@@ -14,23 +14,11 @@ export default function DraftSlots({
   handleDraftSlotEdit, 
   isCompleteDraft = false,
   customLaneAssignments,
-  onLaneReassign,
   onLaneSwap,
   heroList = []
 }) {
-  // Use custom lane assignments if available, otherwise fall back to null (unassigned)
-  const laneOrder = customLaneAssignments?.[team] || [null, null, null, null, null];
-  
-  // Get available lanes for this team (lanes not yet assigned to other slots)
-  const getAvailableLanes = (currentSlotIndex) => {
-    if (!customLaneAssignments?.[team]) return ['exp', 'jungler', 'mid', 'gold', 'roam'];
-    
-    const allLanes = ['exp', 'jungler', 'mid', 'gold', 'roam'];
-    const currentTeamAssignments = customLaneAssignments[team];
-    const usedLanes = currentTeamAssignments.filter((lane, index) => index !== currentSlotIndex);
-    
-    return allLanes.filter(lane => !usedLanes.includes(lane));
-  };
+  // Use custom lane assignments if available, otherwise fall back to fixed lane order
+  const laneOrder = customLaneAssignments?.[team] || ['exp', 'jungler', 'mid', 'gold', 'roam'];
   
   // For red team ban slots, we need to reverse the order to fill from right to left
   const getSlotValue = (index) => {
@@ -87,19 +75,16 @@ export default function DraftSlots({
           <div
             key={i}
             className={`m-1 flex items-center gap-1 ${type === 'pick' ? 'flex-row' : ''}`}
-            style={{ pointerEvents: isCompleteDraft && hero ? 'auto' : 'none', cursor: isCompleteDraft && hero ? 'pointer' : 'default' }}
+            style={{ pointerEvents: 'auto', cursor: isCompleteDraft && hero ? 'pointer' : 'default' }}
           >
             {/* Lane icon for Red Team picks - show first, always visible for pick slots */}
             {type === 'pick' && team === 'red' && (
               <LaneSelector
                 currentLane={currentLane}
-                onLaneSelect={onLaneReassign}
                 onLaneSwap={onLaneSwap}
-                availableLanes={getAvailableLanes(i)}
                 team={team}
                 slotIndex={i}
                 size="w-12 h-12"
-                takenLanes={laneOrder.filter(lane => lane !== null)} // Pass all selected lanes
               />
             )}
             
@@ -171,13 +156,10 @@ export default function DraftSlots({
             {type === 'pick' && team === 'blue' && (
               <LaneSelector
                 currentLane={currentLane}
-                onLaneSelect={onLaneReassign}
                 onLaneSwap={onLaneSwap}
-                availableLanes={getAvailableLanes(i)}
                 team={team}
                 slotIndex={i}
                 size="w-12 h-12"
-                takenLanes={laneOrder.filter(lane => lane !== null)} // Pass all selected lanes
               />
             )}
           </div>

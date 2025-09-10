@@ -554,10 +554,65 @@ export default function HomePage() {
     }
   }
 
-  async function handleExportConfirm({ banning, picks }) {
+  async function handleExportConfirm(exportData) {
     try {
       const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
       const currentTeamId = latestTeam?.id;
+
+      // Check if this is comprehensive draft data (new format) or regular export data (old format)
+      let banning, picks;
+      
+      if (exportData.draftBans && exportData.draftPicks && exportData.laneAssignments && exportData.playerAssignments) {
+        // This is comprehensive draft data - convert to the expected format
+        console.log('Processing comprehensive draft data:', exportData);
+        
+        // Convert draftBans to the expected banning format
+        banning = {
+          blue1: exportData.draftBans.blue.slice(0, 3) || [],
+          blue2: exportData.draftBans.blue.slice(3, 5) || [],
+          red1: exportData.draftBans.red.slice(0, 3) || [],
+          red2: exportData.draftBans.red.slice(3, 5) || []
+        };
+        
+        // Convert draftPicks to the expected picks format with lane assignments
+        const convertDraftPicks = (teamPicks, teamLanes, teamPlayers) => {
+          const picks1 = [];
+          const picks2 = [];
+          
+          teamPicks.forEach((hero, index) => {
+            if (hero) {
+              const lane = teamLanes[index] || 'unknown';
+              const player = teamPlayers[index] || null;
+              
+              const pickData = {
+                lane: lane,
+                hero: hero.name || hero,
+                player: player
+              };
+              
+              // Distribute picks between phase 1 (first 3) and phase 2 (last 2)
+              if (index < 3) {
+                picks1.push(pickData);
+              } else {
+                picks2.push(pickData);
+              }
+            }
+          });
+          
+          return { 1: picks1, 2: picks2 };
+        };
+        
+        picks = {
+          blue: convertDraftPicks(exportData.draftPicks.blue, exportData.laneAssignments.blue, exportData.playerAssignments.blue),
+          red: convertDraftPicks(exportData.draftPicks.red, exportData.laneAssignments.red, exportData.playerAssignments.red)
+        };
+        
+        console.log('Converted comprehensive draft data:', { banning, picks });
+      } else {
+        // This is regular export data - use as is
+        banning = exportData.banning;
+        picks = exportData.picks;
+      }
 
       const payload = {
         match_date: matchDate,
@@ -568,6 +623,11 @@ export default function HomePage() {
         lord_taken:   `${lordTakenBlue || 0}-${lordTakenRed || 0}`,
         team_id: currentTeamId,
         match_type: matchMode,
+        // Include player assignments for comprehensive draft data
+        player_assignments: exportData.playerAssignments ? {
+          blue: exportData.playerAssignments.blue,
+          red: exportData.playerAssignments.red
+        } : null
       };
 
       if (isEditing && editingMatchId) {
@@ -589,9 +649,29 @@ export default function HomePage() {
         }
         
         showAlert('Match updated!', 'success');
+        
+        // Dispatch match updated event for player statistics refresh
+        window.dispatchEvent(new CustomEvent('matchUpdated', {
+          detail: {
+            matchId: editingMatchId,
+            teamId: currentTeamId,
+            matchData: { banning, picks, ...payload },
+            action: 'update'
+          }
+        }));
       } else {
-        await createMatch(payload, { banning, picks }); // keep your create flow
+        const newMatch = await createMatch(payload, { banning, picks }); // keep your create flow
         showAlert('Match exported!', 'success');
+        
+        // Dispatch match updated event for player statistics refresh
+        window.dispatchEvent(new CustomEvent('matchUpdated', {
+          detail: {
+            matchId: newMatch?.id || 'new',
+            teamId: currentTeamId,
+            matchData: { banning, picks, ...payload },
+            action: 'create'
+          }
+        }));
       }
 
       setModalState('none');
@@ -640,7 +720,9 @@ export default function HomePage() {
           picks1: picks.red?.[1] || [],
           picks2: picks.red?.[2] || [],
         }
-      ]
+      ],
+      // Include player assignments if available
+      player_assignments: matchPayload.player_assignments || null
     };
 
     console.log('Full match payload being sent:', fullMatchPayload);

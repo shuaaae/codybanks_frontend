@@ -15,7 +15,8 @@ export default function DraftControls({
   areAllLanesAssigned = true,
   areLaneAssignmentsValid = true,
   onShowDraftHistory,
-  onShowDraftAnalysis
+  onShowDraftAnalysis,
+  onCompleteDraft
 }) {
   // Check if start button should be disabled
   const isStartDisabled = !areAllLanesAssigned || !areLaneAssignmentsValid;
@@ -115,6 +116,15 @@ export default function DraftControls({
             style={{ border: 'none', boxShadow: 'none' }}
           >
             Analyze Draft
+          </button>
+        )}
+        {draftFinished && (
+          <button
+            onClick={onCompleteDraft}
+            className="px-8 py-2 rounded-lg text-white font-semibold transition backdrop-blur-md bg-green-600 hover:bg-green-700"
+            style={{ border: 'none', boxShadow: 'none' }}
+          >
+            Complete Draft
           </button>
         )}
       </div>

@@ -65,6 +65,375 @@ function PlayersStatistic() {
     return savedMode || 'scrim';
   });
 
+  // Calculate hero stats from match data (same as Weekly Report)
+  const calculateHeroStatsFromMatches = useCallback(async (playerIdentifier, player) => {
+    if (!teamPlayers?.id || !teamPlayers?.teamName) return;
+
+    try {
+      console.log(`🔄 Calculating hero stats from matches for ${player.name}...`);
+      console.log(`📊 Match mode: ${matchMode}, Team ID: ${teamPlayers.id}`);
+      
+      // Get matches data using the same method as Weekly Report
+      const matches = await getMatchesData(teamPlayers.id, matchMode);
+      console.log(`📈 Retrieved ${matches?.length || 0} matches for ${matchMode} mode`);
+      console.log(`📋 Match details:`, matches?.map(m => ({ id: m.id, match_type: m.match_type, match_date: m.match_date, winner: m.winner })));
+      
+      if (!matches || matches.length === 0) {
+        console.log(`No matches found for ${player.name}`);
+        setHeroStats([]);
+        return;
+      }
+
+      const heroStats = {};
+      const currentTeam = teamPlayers.teamName;
+
+      // Process each match (same logic as Weekly Report)
+      matches.forEach(match => {
+        // Double-check match type to prevent data mixing
+        if (match.match_type !== matchMode) {
+          console.warn(`⚠️ Skipping match ${match.id} - wrong match type: ${match.match_type} (expected: ${matchMode})`);
+          return;
+        }
+        
+        const matchWinner = match.winner;
+        
+        // Process each team in the match
+        match.teams.forEach(team => {
+          const isWinningTeam = team.team === matchWinner;
+          
+          // Count picks
+          const allPicks = [
+            ...(team.picks1 || []),
+            ...(team.picks2 || [])
+          ];
+          
+          allPicks.forEach(pick => {
+            // Check if this pick belongs to the current player
+            const pickPlayerName = pick.player?.name || pick.player_name || pick.player;
+            if (pickPlayerName && pickPlayerName.toLowerCase() === player.name.toLowerCase()) {
+              const heroName = pick.hero || pick.name;
+              if (heroName) {
+                if (!heroStats[heroName]) {
+                  heroStats[heroName] = {
+                    hero: heroName,
+                    win: 0,
+                    lose: 0,
+                    total: 0,
+                    winrate: 0
+                  };
+                }
+                
+                heroStats[heroName].total++;
+                if (isWinningTeam) {
+                  heroStats[heroName].win++;
+                } else {
+                  heroStats[heroName].lose++;
+                }
+              }
+            }
+          });
+        });
+      });
+
+      // Calculate win rates
+      const result = Object.values(heroStats).map(hero => {
+        const winrate = hero.total > 0 ? Math.round((hero.win / hero.total) * 100) : 0;
+        return {
+          ...hero,
+          winrate
+        };
+      }).sort((a, b) => b.total - a.total);
+
+      console.log(`✅ Hero stats calculated for ${player.name}:`, result);
+      setHeroStats(result);
+      
+      // Cache the results
+      const dataString = JSON.stringify(result);
+      localStorage.setItem(`heroStats_${playerIdentifier}`, dataString);
+      setAllPlayerStats(prev => ({ ...prev, [playerIdentifier]: result }));
+      
+      if (!window.playerStatsCache) window.playerStatsCache = {};
+      window.playerStatsCache[playerIdentifier] = result;
+      
+    } catch (error) {
+      console.error(`❌ Error calculating hero stats for ${player.name}:`, error);
+      setHeroStats([]);
+    } finally {
+      setIsLoadingStats(false);
+    }
+  }, [teamPlayers, matchMode]);
+
+  // Calculate H2H stats from match data
+  const calculateH2HStatsFromMatches = useCallback(async (playerIdentifier, player) => {
+    if (!teamPlayers?.id || !teamPlayers?.teamName) return;
+
+    try {
+      console.log(`🔄 Calculating H2H stats from matches for ${player.name}...`);
+      console.log(`📊 Match mode: ${matchMode}, Team ID: ${teamPlayers.id}`);
+      
+      const matches = await getMatchesData(teamPlayers.id, matchMode);
+      console.log(`📈 Retrieved ${matches?.length || 0} matches for ${matchMode} mode`);
+      console.log(`📋 Match details:`, matches?.map(m => ({ id: m.id, match_type: m.match_type, match_date: m.match_date, winner: m.winner })));
+      
+      if (!matches || matches.length === 0) {
+        setHeroH2HStats([]);
+        return;
+      }
+
+      const h2hStats = {};
+      const currentTeam = teamPlayers.teamName;
+
+      matches.forEach(match => {
+        // Double-check match type to prevent data mixing
+        if (match.match_type !== matchMode) {
+          console.warn(`⚠️ Skipping match ${match.id} - wrong match type: ${match.match_type} (expected: ${matchMode})`);
+          return;
+        }
+        
+        const matchWinner = match.winner;
+        
+        // Find our team and enemy team
+        let ourTeam = null;
+        let enemyTeam = null;
+        
+        match.teams.forEach(team => {
+          if (team.team === currentTeam) {
+            ourTeam = team;
+          } else {
+            enemyTeam = team;
+          }
+        });
+        
+        if (!ourTeam || !enemyTeam) return;
+        
+        const isWinningTeam = ourTeam.team === matchWinner;
+        
+        // Get all picks for both teams
+        const ourPicks = [
+          ...(ourTeam.picks1 || []),
+          ...(ourTeam.picks2 || [])
+        ];
+        
+        const enemyPicks = [
+          ...(enemyTeam.picks1 || []),
+          ...(enemyTeam.picks2 || [])
+        ];
+        
+        // Find our player's pick
+        const ourPlayerPick = ourPicks.find(pick => {
+          const pickPlayerName = pick.player?.name || pick.player_name || pick.player;
+          return pickPlayerName && pickPlayerName.toLowerCase() === player.name.toLowerCase();
+        });
+        
+        if (ourPlayerPick) {
+          const ourHero = ourPlayerPick.hero || ourPlayerPick.name;
+          const ourPlayerRole = player.role || 'unknown';
+          
+          // Find enemy player with the SAME LANE for proper H2H matchup
+          let enemyPlayerPick = null;
+          
+          // Get our player's lane from the pick data
+          const ourPlayerLane = ourPlayerPick.lane || 'unknown';
+          console.log(`🔍 Looking for enemy in ${ourPlayerLane} lane among ${enemyPicks.length} enemy picks`);
+          
+          enemyPicks.forEach((enemyPick, index) => {
+            const enemyLane = enemyPick.lane || 'unknown';
+            const enemyHero = enemyPick.hero || enemyPick.name;
+            console.log(`🔍 Enemy pick ${index}: ${enemyHero} in lane: ${enemyLane}`);
+          });
+          
+          // First, try to find exact lane match
+          enemyPlayerPick = enemyPicks.find(enemyPick => {
+            const enemyLane = enemyPick.lane || 'unknown';
+            const isMatch = enemyLane && enemyLane.toLowerCase() === ourPlayerLane.toLowerCase();
+            if (isMatch) {
+              console.log(`✅ Found exact lane match: ${enemyPick.hero || enemyPick.name} (${enemyLane}) matches ${ourPlayerLane}`);
+            }
+            return isMatch;
+          });
+          
+          // If no exact lane match found, try flexible lane matching
+          if (!enemyPlayerPick) {
+            console.log(`⚠️ No exact lane match for ${ourPlayerLane}, trying flexible matching...`);
+            
+            // Try common lane variations
+            const laneVariations = {
+              'mid': ['mid', 'midlaner', 'middle', 'mid lane', 'midlaner'],
+              'jungle': ['jungle', 'jungler', 'jungle lane', 'jungler'],
+              'gold': ['gold', 'gold laner', 'gold lane', 'goldlaner', 'adc', 'marksman', 'carry'],
+              'roam': ['roam', 'roamer', 'support', 'tank', 'roamer'],
+              'exp': ['exp', 'explorer', 'offlaner', 'fighter', 'explore', 'explorer']
+            };
+            
+            const ourLaneVariations = laneVariations[ourPlayerLane.toLowerCase()] || [ourPlayerLane.toLowerCase()];
+            console.log(`🔍 Looking for lanes: ${ourLaneVariations.join(', ')}`);
+            
+            enemyPlayerPick = enemyPicks.find(enemyPick => {
+              const enemyLane = (enemyPick.lane || 'unknown').toLowerCase();
+              console.log(`🔍 Checking enemy lane: ${enemyLane} against variations: ${ourLaneVariations.join(', ')}`);
+              
+              // Check if enemy lane matches any of our lane variations
+              const matches = ourLaneVariations.some(lane => 
+                enemyLane.includes(lane) || lane.includes(enemyLane)
+              );
+              
+              if (matches) {
+                console.log(`✅ Found lane match: ${enemyLane} matches ${ourPlayerLane}`);
+              }
+              
+              return matches;
+            });
+          }
+          
+          // If still no match, try to match by position in the team (fallback)
+          if (!enemyPlayerPick && enemyPicks.length > 0) {
+            console.log(`⚠️ No lane match found, trying position-based matching...`);
+            
+            // Try to match by position in the team structure
+            // This is a last resort fallback
+            const positionMap = {
+              'mid': 1, // Usually 2nd pick
+              'jungle': 0,  // Usually 1st pick
+              'gold': 4, // Usually 5th pick
+              'roam': 2,   // Usually 3rd pick
+              'exp': 3  // Usually 4th pick
+            };
+            
+            const ourPosition = positionMap[ourPlayerLane.toLowerCase()];
+            if (ourPosition !== undefined && enemyPicks[ourPosition]) {
+              enemyPlayerPick = enemyPicks[ourPosition];
+              console.log(`📍 Using position-based match: ${enemyPlayerPick.hero || enemyPlayerPick.name} at position ${ourPosition}`);
+            }
+          }
+          
+          // Final fallback - use first enemy pick only if absolutely necessary
+          if (!enemyPlayerPick && enemyPicks.length > 0) {
+            console.log(`⚠️ No lane or position match found, using first enemy pick as final fallback`);
+            enemyPlayerPick = enemyPicks[0];
+          }
+          
+          if (enemyPlayerPick) {
+            const enemyHero = enemyPlayerPick.hero || enemyPlayerPick.name;
+            const enemyLane = enemyPlayerPick.lane || 'unknown';
+            const h2hKey = `${ourHero}_vs_${enemyHero}`;
+            
+            if (!h2hStats[h2hKey]) {
+              h2hStats[h2hKey] = {
+                player_hero: ourHero,
+                enemy_hero: enemyHero,
+                win: 0,
+                lose: 0,
+                total: 0,
+                winrate: 0
+              };
+            }
+            
+            h2hStats[h2hKey].total++;
+            if (isWinningTeam) {
+              h2hStats[h2hKey].win++;
+            } else {
+              h2hStats[h2hKey].lose++;
+            }
+            
+            console.log(`🎯 H2H Matchup: ${ourPlayerLane} ${ourHero} vs ${enemyLane} ${enemyHero} (${isWinningTeam ? 'WIN' : 'LOSE'})`);
+          } else {
+            console.log(`⚠️ No enemy player found for H2H matchup with ${ourHero} in ${ourPlayerLane} lane`);
+          }
+        }
+      });
+
+      const result = Object.values(h2hStats).map(h2h => {
+        const winrate = h2h.total > 0 ? Math.round((h2h.win / h2h.total) * 100) : 0;
+        return {
+          ...h2h,
+          winrate
+        };
+      }).sort((a, b) => b.total - a.total);
+
+      console.log(`✅ H2H stats calculated for ${player.name}:`, result);
+      setHeroH2HStats(result);
+      
+      const dataString = JSON.stringify(result);
+      localStorage.setItem(`heroH2HStats_${playerIdentifier}`, dataString);
+      setAllPlayerH2HStats(prev => ({ ...prev, [playerIdentifier]: result }));
+      
+      if (!window.playerH2HStatsCache) window.playerH2HStatsCache = {};
+      window.playerH2HStatsCache[playerIdentifier] = result;
+      
+    } catch (error) {
+      console.error(`❌ Error calculating H2H stats for ${player.name}:`, error);
+      setHeroH2HStats([]);
+    }
+  }, [teamPlayers, matchMode]);
+
+  // Auto-refresh data when component mounts or matchMode changes (like Weekly Report)
+  useEffect(() => {
+    const refreshAllPlayerData = async () => {
+      if (!teamPlayers?.id || !teamPlayers?.players_data) return;
+      
+      console.log(`🔄 Auto-refreshing all player data for match mode: ${matchMode}`);
+      
+      // Clear existing cache to force fresh calculation
+      setAllPlayerStats({});
+      setAllPlayerH2HStats({});
+      
+      // Clear matches cache to ensure fresh data from API
+      if (window.matchesCache) {
+        const teamId = teamPlayers.id;
+        Object.keys(window.matchesCache.data || {}).forEach(key => {
+          if (key.includes(teamId)) {
+            delete window.matchesCache.data[key];
+          }
+        });
+        Object.keys(window.matchesCache.isLoading || {}).forEach(key => {
+          if (key.includes(teamId)) {
+            delete window.matchesCache.isLoading[key];
+          }
+        });
+      }
+      
+      // Clear localStorage cache for this team
+      const teamId = teamPlayers.id;
+      Object.keys(localStorage).forEach(key => {
+        if (key.includes(`heroStats_${teamId}`) || key.includes(`heroH2HStats_${teamId}`)) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      // Clear all player-specific caches
+      if (window.playerStatsCache) {
+        Object.keys(window.playerStatsCache).forEach(key => {
+          if (key.includes(teamId)) {
+            delete window.playerStatsCache[key];
+          }
+        });
+      }
+      
+      if (window.playerH2HStatsCache) {
+        Object.keys(window.playerH2HStatsCache).forEach(key => {
+          if (key.includes(teamId)) {
+            delete window.playerH2HStatsCache[key];
+          }
+        });
+      }
+      
+      // Calculate stats for all players in parallel
+      const players = teamPlayers.players_data || teamPlayers.players || [];
+      const promises = players.map(player => {
+        const playerIdentifier = `${player.name}_${player.role || 'unknown'}`;
+        return Promise.allSettled([
+          calculateHeroStatsFromMatches(playerIdentifier, player),
+          calculateH2HStatsFromMatches(playerIdentifier, player)
+        ]);
+      });
+      
+      await Promise.allSettled(promises);
+      console.log(`✅ Auto-refresh completed for all players`);
+    };
+    
+    refreshAllPlayerData();
+  }, [teamPlayers, matchMode, calculateHeroStatsFromMatches, calculateH2HStatsFromMatches]);
+
   // Listen for match mode changes in localStorage
   useEffect(() => {
     const handleStorageChange = (e) => {
@@ -75,6 +444,13 @@ function PlayersStatistic() {
         setAllPlayerH2HStats({});
         setHeroStats([]);
         setHeroH2HStats([]);
+        
+        // If a player modal is open, trigger immediate recalculation
+        if (modalInfo && modalInfo.player) {
+          console.log(`🔄 Mode changed to ${e.newValue}, recalculating stats for open modal: ${modalInfo.player.name}`);
+          // Trigger recalculation by updating the modal info to force useEffect
+          setModalInfo({ ...modalInfo, forceRecalc: Date.now() });
+        }
       }
     };
 
@@ -89,6 +465,13 @@ function PlayersStatistic() {
         setAllPlayerH2HStats({});
         setHeroStats([]);
         setHeroH2HStats([]);
+        
+        // If a player modal is open, trigger immediate recalculation
+        if (modalInfo && modalInfo.player) {
+          console.log(`🔄 Mode changed to ${currentMode}, recalculating stats for open modal: ${modalInfo.player.name}`);
+          // Trigger recalculation by updating the modal info to force useEffect
+          setModalInfo({ ...modalInfo, forceRecalc: Date.now() });
+        }
       }
     };
 
@@ -98,7 +481,409 @@ function PlayersStatistic() {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [matchMode]);
+  }, [matchMode, modalInfo]);
+
+  // ULTRA-AGGRESSIVE data restoration on component mount and team change
+  useEffect(() => {
+    const loadCachedPlayerStats = () => {
+      if (teamPlayers?.players_data) {
+        const cachedStats = {};
+        const cachedH2HStats = {};
+        
+        console.log(`🔄 ULTRA-AGGRESSIVE data restoration for ${teamPlayers.players_data.length} players`);
+        
+        teamPlayers.players_data.forEach(player => {
+          if (player.name && player.role) {
+            const playerIdentifier = getPlayerIdentifier(player.name, player.role);
+            
+            // Check ALL possible sources for hero stats
+            let heroStatsData = null;
+            let h2hStatsData = null;
+            
+            // Source 1: Component state
+            if (allPlayerStats[playerIdentifier]) {
+              heroStatsData = allPlayerStats[playerIdentifier];
+              console.log(`📊 Found hero stats in component state for ${player.name}`);
+            }
+            // Source 2: localStorage
+            else if (localStorage.getItem(`heroStats_${playerIdentifier}`)) {
+              try {
+                heroStatsData = JSON.parse(localStorage.getItem(`heroStats_${playerIdentifier}`));
+                console.log(`📊 Found hero stats in localStorage for ${player.name}`);
+              } catch (error) {
+                console.error(`❌ Error parsing localStorage hero stats for ${player.name}:`, error);
+              }
+            }
+            // Source 3: sessionStorage
+            else if (sessionStorage.getItem(`heroStats_${playerIdentifier}`)) {
+              try {
+                heroStatsData = JSON.parse(sessionStorage.getItem(`heroStats_${playerIdentifier}`));
+                console.log(`📊 Found hero stats in sessionStorage for ${player.name}`);
+              } catch (error) {
+                console.error(`❌ Error parsing sessionStorage hero stats for ${player.name}:`, error);
+              }
+            }
+            // Source 4: Global cache
+            else if (window.playerStatsCache?.[playerIdentifier]) {
+              heroStatsData = window.playerStatsCache[playerIdentifier];
+              console.log(`📊 Found hero stats in global cache for ${player.name}`);
+            }
+            
+            // Check ALL possible sources for H2H stats
+            if (allPlayerH2HStats[playerIdentifier]) {
+              h2hStatsData = allPlayerH2HStats[playerIdentifier];
+              console.log(`📊 Found H2H stats in component state for ${player.name}`);
+            }
+            else if (localStorage.getItem(`heroH2HStats_${playerIdentifier}`)) {
+              try {
+                h2hStatsData = JSON.parse(localStorage.getItem(`heroH2HStats_${playerIdentifier}`));
+                console.log(`📊 Found H2H stats in localStorage for ${player.name}`);
+              } catch (error) {
+                console.error(`❌ Error parsing localStorage H2H stats for ${player.name}:`, error);
+              }
+            }
+            else if (sessionStorage.getItem(`heroH2HStats_${playerIdentifier}`)) {
+              try {
+                h2hStatsData = JSON.parse(sessionStorage.getItem(`heroH2HStats_${playerIdentifier}`));
+                console.log(`📊 Found H2H stats in sessionStorage for ${player.name}`);
+              } catch (error) {
+                console.error(`❌ Error parsing sessionStorage H2H stats for ${player.name}:`, error);
+              }
+            }
+            else if (window.playerH2HStatsCache?.[playerIdentifier]) {
+              h2hStatsData = window.playerH2HStatsCache[playerIdentifier];
+              console.log(`📊 Found H2H stats in global cache for ${player.name}`);
+            }
+            
+            // Store found data
+            if (heroStatsData) {
+              cachedStats[playerIdentifier] = heroStatsData;
+              
+              // Update ALL storage layers to ensure consistency
+              const dataString = JSON.stringify(heroStatsData);
+              localStorage.setItem(`heroStats_${playerIdentifier}`, dataString);
+              sessionStorage.setItem(`heroStats_${playerIdentifier}`, dataString);
+              if (!window.playerStatsCache) window.playerStatsCache = {};
+              window.playerStatsCache[playerIdentifier] = heroStatsData;
+            }
+            
+            if (h2hStatsData) {
+              cachedH2HStats[playerIdentifier] = h2hStatsData;
+              
+              // Update ALL storage layers to ensure consistency
+              const dataString = JSON.stringify(h2hStatsData);
+              localStorage.setItem(`heroH2HStats_${playerIdentifier}`, dataString);
+              sessionStorage.setItem(`heroH2HStats_${playerIdentifier}`, dataString);
+              if (!window.playerH2HStatsCache) window.playerH2HStatsCache = {};
+              window.playerH2HStatsCache[playerIdentifier] = h2hStatsData;
+            }
+          }
+        });
+        
+        if (Object.keys(cachedStats).length > 0) {
+          setAllPlayerStats(cachedStats);
+          console.log(`✅ ULTRA-AGGRESSIVE: Loaded ${Object.keys(cachedStats).length} cached hero stats on mount`);
+        }
+        
+        if (Object.keys(cachedH2HStats).length > 0) {
+          setAllPlayerH2HStats(cachedH2HStats);
+          console.log(`✅ ULTRA-AGGRESSIVE: Loaded ${Object.keys(cachedH2HStats).length} cached H2H stats on mount`);
+        }
+      }
+    };
+
+    loadCachedPlayerStats();
+  }, [teamPlayers?.players_data]); // Re-run when team players change
+
+  // ULTRA-AGGRESSIVE data restoration on page focus/visibility change
+  useEffect(() => {
+    const handlePageFocus = () => {
+      if (teamPlayers?.players_data) {
+        console.log(`🔄 ULTRA-AGGRESSIVE page focus restoration...`);
+        const cachedStats = {};
+        const cachedH2HStats = {};
+        
+        teamPlayers.players_data.forEach(player => {
+          if (player.name && player.role) {
+            const playerIdentifier = getPlayerIdentifier(player.name, player.role);
+            
+            // Check ALL possible sources for hero stats
+            let heroStatsData = null;
+            let h2hStatsData = null;
+            
+            // Source 1: Component state
+            if (allPlayerStats[playerIdentifier]) {
+              heroStatsData = allPlayerStats[playerIdentifier];
+            }
+            // Source 2: localStorage
+            else if (localStorage.getItem(`heroStats_${playerIdentifier}`)) {
+              try {
+                heroStatsData = JSON.parse(localStorage.getItem(`heroStats_${playerIdentifier}`));
+              } catch (error) {
+                console.error(`❌ Error parsing localStorage hero stats for ${player.name}:`, error);
+              }
+            }
+            // Source 3: sessionStorage
+            else if (sessionStorage.getItem(`heroStats_${playerIdentifier}`)) {
+              try {
+                heroStatsData = JSON.parse(sessionStorage.getItem(`heroStats_${playerIdentifier}`));
+              } catch (error) {
+                console.error(`❌ Error parsing sessionStorage hero stats for ${player.name}:`, error);
+              }
+            }
+            // Source 4: Global cache
+            else if (window.playerStatsCache?.[playerIdentifier]) {
+              heroStatsData = window.playerStatsCache[playerIdentifier];
+            }
+            
+            // Check ALL possible sources for H2H stats
+            if (allPlayerH2HStats[playerIdentifier]) {
+              h2hStatsData = allPlayerH2HStats[playerIdentifier];
+            }
+            else if (localStorage.getItem(`heroH2HStats_${playerIdentifier}`)) {
+              try {
+                h2hStatsData = JSON.parse(localStorage.getItem(`heroH2HStats_${playerIdentifier}`));
+              } catch (error) {
+                console.error(`❌ Error parsing localStorage H2H stats for ${player.name}:`, error);
+              }
+            }
+            else if (sessionStorage.getItem(`heroH2HStats_${playerIdentifier}`)) {
+              try {
+                h2hStatsData = JSON.parse(sessionStorage.getItem(`heroH2HStats_${playerIdentifier}`));
+              } catch (error) {
+                console.error(`❌ Error parsing sessionStorage H2H stats for ${player.name}:`, error);
+              }
+            }
+            else if (window.playerH2HStatsCache?.[playerIdentifier]) {
+              h2hStatsData = window.playerH2HStatsCache[playerIdentifier];
+            }
+            
+            // Store found data
+            if (heroStatsData) {
+              cachedStats[playerIdentifier] = heroStatsData;
+              console.log(`💾 ULTRA-AGGRESSIVE: Restored hero stats for ${player.name} on focus`);
+            }
+            
+            if (h2hStatsData) {
+              cachedH2HStats[playerIdentifier] = h2hStatsData;
+              console.log(`💾 ULTRA-AGGRESSIVE: Restored H2H stats for ${player.name} on focus`);
+            }
+          }
+        });
+        
+        // Update cache with any missing data
+        if (Object.keys(cachedStats).length > 0) {
+          setAllPlayerStats(prev => ({ ...prev, ...cachedStats }));
+          console.log(`✅ ULTRA-AGGRESSIVE: Restored ${Object.keys(cachedStats).length} missing hero stats on focus`);
+        }
+        
+        if (Object.keys(cachedH2HStats).length > 0) {
+          setAllPlayerH2HStats(prev => ({ ...prev, ...cachedH2HStats }));
+          console.log(`✅ ULTRA-AGGRESSIVE: Restored ${Object.keys(cachedH2HStats).length} missing H2H stats on focus`);
+        }
+      }
+    };
+
+    window.addEventListener('focus', handlePageFocus);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        handlePageFocus();
+      }
+    });
+
+    return () => {
+      window.removeEventListener('focus', handlePageFocus);
+      document.removeEventListener('visibilitychange', handlePageFocus);
+    };
+  }, [teamPlayers?.players_data, allPlayerStats, allPlayerH2HStats]);
+
+  // ULTRA-AGGRESSIVE data integrity check with global cache restoration
+  useEffect(() => {
+    const validateAndRestoreData = () => {
+      if (teamPlayers?.players_data) {
+        console.log(`🔍 ULTRA-AGGRESSIVE data integrity check...`);
+        let restoredCount = 0;
+        
+        teamPlayers.players_data.forEach(player => {
+          if (player.name && player.role) {
+            const playerIdentifier = getPlayerIdentifier(player.name, player.role);
+            const hasCachedHeroStats = allPlayerStats[playerIdentifier];
+            const hasCachedH2HStats = allPlayerH2HStats[playerIdentifier];
+            
+            // Check ALL possible sources for missing data
+            let heroStatsData = null;
+            let h2hStatsData = null;
+            
+            if (!hasCachedHeroStats) {
+              // Check localStorage
+              const savedHeroStats = localStorage.getItem(`heroStats_${playerIdentifier}`);
+              if (savedHeroStats) {
+                try {
+                  heroStatsData = JSON.parse(savedHeroStats);
+                } catch (error) {
+                  console.error(`❌ Error parsing localStorage hero stats for ${player.name}:`, error);
+                }
+              }
+              // Check sessionStorage
+              else if (sessionStorage.getItem(`heroStats_${playerIdentifier}`)) {
+                try {
+                  heroStatsData = JSON.parse(sessionStorage.getItem(`heroStats_${playerIdentifier}`));
+                } catch (error) {
+                  console.error(`❌ Error parsing sessionStorage hero stats for ${player.name}:`, error);
+                }
+              }
+              // Check global cache
+              else if (window.playerStatsCache?.[playerIdentifier]) {
+                heroStatsData = window.playerStatsCache[playerIdentifier];
+              }
+            }
+            
+            if (!hasCachedH2HStats) {
+              // Check localStorage
+              const savedH2HStats = localStorage.getItem(`heroH2HStats_${playerIdentifier}`);
+              if (savedH2HStats) {
+                try {
+                  h2hStatsData = JSON.parse(savedH2HStats);
+                } catch (error) {
+                  console.error(`❌ Error parsing localStorage H2H stats for ${player.name}:`, error);
+                }
+              }
+              // Check sessionStorage
+              else if (sessionStorage.getItem(`heroH2HStats_${playerIdentifier}`)) {
+                try {
+                  h2hStatsData = JSON.parse(sessionStorage.getItem(`heroH2HStats_${playerIdentifier}`));
+                } catch (error) {
+                  console.error(`❌ Error parsing sessionStorage H2H stats for ${player.name}:`, error);
+                }
+              }
+              // Check global cache
+              else if (window.playerH2HStatsCache?.[playerIdentifier]) {
+                h2hStatsData = window.playerH2HStatsCache[playerIdentifier];
+              }
+            }
+            
+            // Restore found data
+            if (heroStatsData) {
+              setAllPlayerStats(prev => ({ ...prev, [playerIdentifier]: heroStatsData }));
+              console.log(`🔧 ULTRA-AGGRESSIVE: Restored missing hero stats for ${player.name}`);
+              restoredCount++;
+            }
+            
+            if (h2hStatsData) {
+              setAllPlayerH2HStats(prev => ({ ...prev, [playerIdentifier]: h2hStatsData }));
+              console.log(`🔧 ULTRA-AGGRESSIVE: Restored missing H2H stats for ${player.name}`);
+              restoredCount++;
+            }
+          }
+        });
+        
+        if (restoredCount > 0) {
+          console.log(`✅ ULTRA-AGGRESSIVE data integrity check completed: restored ${restoredCount} missing data sets`);
+        }
+      }
+    };
+
+    // Run validation every 3 seconds (more frequent)
+    const validationInterval = setInterval(validateAndRestoreData, 3000);
+    
+    // Also run on component mount
+    validateAndRestoreData();
+
+    return () => clearInterval(validationInterval);
+  }, [teamPlayers?.players_data, allPlayerStats, allPlayerH2HStats]);
+
+  // Navigation event listener for ultra-aggressive data restoration
+  useEffect(() => {
+    const handleNavigationReturn = () => {
+      console.log(`🔄 Navigation return detected - ULTRA-AGGRESSIVE data restoration`);
+      
+      if (teamPlayers?.players_data) {
+        const cachedStats = {};
+        const cachedH2HStats = {};
+        
+        teamPlayers.players_data.forEach(player => {
+          if (player.name && player.role) {
+            const playerIdentifier = getPlayerIdentifier(player.name, player.role);
+            
+            // Check ALL possible sources
+            let heroStatsData = null;
+            let h2hStatsData = null;
+            
+            // Check global cache first (most reliable for navigation)
+            if (window.playerStatsCache?.[playerIdentifier]) {
+              heroStatsData = window.playerStatsCache[playerIdentifier];
+            }
+            else if (localStorage.getItem(`heroStats_${playerIdentifier}`)) {
+              try {
+                heroStatsData = JSON.parse(localStorage.getItem(`heroStats_${playerIdentifier}`));
+              } catch (error) {
+                console.error(`❌ Error parsing localStorage hero stats for ${player.name}:`, error);
+              }
+            }
+            else if (sessionStorage.getItem(`heroStats_${playerIdentifier}`)) {
+              try {
+                heroStatsData = JSON.parse(sessionStorage.getItem(`heroStats_${playerIdentifier}`));
+              } catch (error) {
+                console.error(`❌ Error parsing sessionStorage hero stats for ${player.name}:`, error);
+              }
+            }
+            
+            if (window.playerH2HStatsCache?.[playerIdentifier]) {
+              h2hStatsData = window.playerH2HStatsCache[playerIdentifier];
+            }
+            else if (localStorage.getItem(`heroH2HStats_${playerIdentifier}`)) {
+              try {
+                h2hStatsData = JSON.parse(localStorage.getItem(`heroH2HStats_${playerIdentifier}`));
+              } catch (error) {
+                console.error(`❌ Error parsing localStorage H2H stats for ${player.name}:`, error);
+              }
+            }
+            else if (sessionStorage.getItem(`heroH2HStats_${playerIdentifier}`)) {
+              try {
+                h2hStatsData = JSON.parse(sessionStorage.getItem(`heroH2HStats_${playerIdentifier}`));
+              } catch (error) {
+                console.error(`❌ Error parsing sessionStorage H2H stats for ${player.name}:`, error);
+              }
+            }
+            
+            if (heroStatsData) {
+              cachedStats[playerIdentifier] = heroStatsData;
+            }
+            
+            if (h2hStatsData) {
+              cachedH2HStats[playerIdentifier] = h2hStatsData;
+            }
+          }
+        });
+        
+        // Update component state
+        if (Object.keys(cachedStats).length > 0) {
+          setAllPlayerStats(cachedStats);
+          console.log(`✅ ULTRA-AGGRESSIVE navigation: Restored ${Object.keys(cachedStats).length} hero stats`);
+        }
+        
+        if (Object.keys(cachedH2HStats).length > 0) {
+          setAllPlayerH2HStats(cachedH2HStats);
+          console.log(`✅ ULTRA-AGGRESSIVE navigation: Restored ${Object.keys(cachedH2HStats).length} H2H stats`);
+        }
+      }
+    };
+
+    // Listen for page show events (when returning from another page)
+    window.addEventListener('pageshow', handleNavigationReturn);
+    
+    // Also listen for focus events
+    window.addEventListener('focus', handleNavigationReturn);
+    
+    // Listen for custom navigation events
+    window.addEventListener('navigationReturn', handleNavigationReturn);
+
+    return () => {
+      window.removeEventListener('pageshow', handleNavigationReturn);
+      window.removeEventListener('focus', handleNavigationReturn);
+      window.removeEventListener('navigationReturn', handleNavigationReturn);
+    };
+  }, [teamPlayers?.players_data]);
 
   // Handle scroll events for scroll-to-top button and team card hide
   useEffect(() => {
@@ -653,8 +1438,8 @@ function PlayersStatistic() {
           hero: null
         }));
         setLanePlayers(allPlayers);
-      } else {
-        setLanePlayers(null);
+    } else {
+      setLanePlayers(null);
       }
       localStorage.removeItem('currentMatchData');
     }
@@ -662,98 +1447,98 @@ function PlayersStatistic() {
 
   // Load team data when team changes
   useEffect(() => {
-      const loadTeamData = async () => {
-        setIsLoadingTeam(true);
-        
-        // Add timeout to prevent infinite loading, but only if we don't have data
-        let timeoutId;
-        if (!teamPlayers || !teamPlayers.players_data || teamPlayers.players_data.length === 0) {
-          timeoutId = setTimeout(() => {
-            setIsLoadingTeam(false);
-          }, 5000); // Reduced to 5 seconds for better UX
+    const loadTeamData = async () => {
+      setIsLoadingTeam(true);
+      
+      // Add timeout to prevent infinite loading, but only if we don't have data
+      let timeoutId;
+      if (!teamPlayers || !teamPlayers.players_data || teamPlayers.players_data.length === 0) {
+        timeoutId = setTimeout(() => {
+          setIsLoadingTeam(false);
+        }, 5000); // Reduced to 5 seconds for better UX
+      }
+      
+      // Cleanup function to clear timeout
+      const cleanup = () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
         }
+      };
+      
+      try {
+        // First try to get team data from localStorage for immediate display
+        const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
         
-        // Cleanup function to clear timeout
-        const cleanup = () => {
+        if (latestTeam && latestTeam.teamName) {
+          // Set team data immediately from localStorage for fast display
+          // Preserve logo_path if it exists
+          const teamDataWithLogo = {
+            ...latestTeam,
+            logo_path: latestTeam.logo_path || null
+          };
+          setTeamPlayers(teamDataWithLogo);
+          setCurrentTeamId(latestTeam.id);
+          setIsLoadingTeam(false); // Stop loading immediately when we have data
+          
+          // Clear timeout since we have data
           if (timeoutId) {
             clearTimeout(timeoutId);
           }
-        };
-        
-        try {
-          // First try to get team data from localStorage for immediate display
-          const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
           
-          if (latestTeam && latestTeam.teamName) {
-            // Set team data immediately from localStorage for fast display
-            // Preserve logo_path if it exists
-            const teamDataWithLogo = {
-              ...latestTeam,
-              logo_path: latestTeam.logo_path || null
-            };
-            setTeamPlayers(teamDataWithLogo);
-            setCurrentTeamId(latestTeam.id);
-            setIsLoadingTeam(false); // Stop loading immediately when we have data
-            
-            // Clear timeout since we have data
-            if (timeoutId) {
-              clearTimeout(timeoutId);
-            }
-            
-            // Then fetch fresh data from backend in background
-            try {
-              const response = await fetch(buildApiUrl(`/teams/active`), {
-                headers: {
+          // Then fetch fresh data from backend in background
+          try {
+            const response = await fetch(buildApiUrl(`/teams/active`), {
+              headers: {
                   'X-Active-Team-ID': latestTeam.id,
                   'Content-Type': 'application/json'
-                }
-              });
-              if (response.ok) {
-                const activeTeam = await response.json();
-                
-                // Update localStorage with fresh data
-                const updatedTeamData = {
-                  teamName: activeTeam.name,
-                  players_data: activeTeam.players_data || activeTeam.players || [],
-                  id: activeTeam.id,
-                  logo_path: activeTeam.logo_path || null
-                };
-                
-                localStorage.setItem('latestTeam', JSON.stringify(updatedTeamData));
-                setTeamPlayers(updatedTeamData);
-                setCurrentTeamId(activeTeam.id);
-                
-                // Update lanePlayers with all current team players if no match is active
-                const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
-                if (!latestMatch || !latestMatch.teams || latestMatch.teams.length === 0) {
-                  const allPlayers = updatedTeamData.players_data.map(player => ({
-                    lane: player.role?.toLowerCase().replace(' ', '_') || 'unknown',
-                    player: player,
-                    hero: null
-                  }));
-                  setLanePlayers(allPlayers);
-                }
-                
-                // Preload player images for the team (only once per team change)
-                if (!imageCache[`team_${updatedTeamData.id}`]) {
-                  preloadPlayerImages(updatedTeamData);
-                  setImageCache(prev => ({ ...prev, [`team_${updatedTeamData.id}`]: true }));
-                }
               }
-            } catch (error) {
-              console.error('Error fetching fresh team data:', error);
-              // Keep using localStorage data if API fails
+            });
+            if (response.ok) {
+              const activeTeam = await response.json();
+              
+              // Update localStorage with fresh data
+              const updatedTeamData = {
+                teamName: activeTeam.name,
+                players_data: activeTeam.players_data || activeTeam.players || [],
+                id: activeTeam.id,
+                logo_path: activeTeam.logo_path || null
+              };
+              
+              localStorage.setItem('latestTeam', JSON.stringify(updatedTeamData));
+              setTeamPlayers(updatedTeamData);
+              setCurrentTeamId(activeTeam.id);
+              
+              // Update lanePlayers with all current team players if no match is active
+              const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
+              if (!latestMatch || !latestMatch.teams || latestMatch.teams.length === 0) {
+                const allPlayers = updatedTeamData.players_data.map(player => ({
+                  lane: player.role?.toLowerCase().replace(' ', '_') || 'unknown',
+                  player: player,
+                  hero: null
+                }));
+                setLanePlayers(allPlayers);
+              }
+              
+              // Preload player images for the team (only once per team change)
+              if (!imageCache[`team_${updatedTeamData.id}`]) {
+                preloadPlayerImages(updatedTeamData);
+                setImageCache(prev => ({ ...prev, [`team_${updatedTeamData.id}`]: true }));
+              }
             }
-          } else {
-            // Try to fetch active team from API
-            try {
+          } catch (error) {
+            console.error('Error fetching fresh team data:', error);
+            // Keep using localStorage data if API fails
+          }
+        } else {
+          // Try to fetch active team from API
+          try {
               const response = await fetch(buildApiUrl(`/teams/active`), {
                 headers: {
                   'Content-Type': 'application/json'
                 }
               });
-              if (response.ok) {
-                const activeTeam = await response.json();
+            if (response.ok) {
+              const activeTeam = await response.json();
                 
                 // Check if we have a valid team or if it's the "no teams" response
                 if (activeTeam.has_teams === false || !activeTeam.id) {
@@ -761,59 +1546,59 @@ function PlayersStatistic() {
                   setTeamPlayers(null);
                   setCurrentTeamId(null);
                 } else {
-                  const teamData = {
-                    teamName: activeTeam.name,
-                    players_data: activeTeam.players_data || activeTeam.players || [],
-                    id: activeTeam.id,
-                    logo_path: activeTeam.logo_path || null
-                  };
-                  localStorage.setItem('latestTeam', JSON.stringify(teamData));
-                  setTeamPlayers(teamData);
-                  setCurrentTeamId(activeTeam.id);
-                  
-                  // Clear timeout since we have data
-                  if (timeoutId) {
-                    clearTimeout(timeoutId);
-                  }
-                  
-                  // Update lanePlayers with all current team players if no match is active
-                  const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
-                  if (!latestMatch || !latestMatch.teams || latestMatch.teams.length === 0) {
-                    const allPlayers = teamData.players_data.map(player => ({
-                      lane: player.role?.toLowerCase().replace(' ', '_') || 'unknown',
-                      player: player,
-                      hero: null
-                    }));
-                    setLanePlayers(allPlayers);
-                  }
-                  
-                  // Preload player images for the team (only once per team change)
-                  if (!imageCache[`team_${teamData.id}`]) {
-                    preloadPlayerImages(teamData);
-                    setImageCache(prev => ({ ...prev, [`team_${teamData.id}`]: true }));
-                  }
-                }
-              } else {
-                setTeamPlayers(null);
+              const teamData = {
+                teamName: activeTeam.name,
+                players_data: activeTeam.players_data || activeTeam.players || [],
+                id: activeTeam.id,
+                logo_path: activeTeam.logo_path || null
+              };
+              localStorage.setItem('latestTeam', JSON.stringify(teamData));
+              setTeamPlayers(teamData);
+              setCurrentTeamId(activeTeam.id);
+              
+              // Clear timeout since we have data
+              if (timeoutId) {
+                clearTimeout(timeoutId);
               }
-            } catch (error) {
-              console.error('Error fetching active team:', error);
+              
+              // Update lanePlayers with all current team players if no match is active
+              const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
+              if (!latestMatch || !latestMatch.teams || latestMatch.teams.length === 0) {
+                const allPlayers = teamData.players_data.map(player => ({
+                  lane: player.role?.toLowerCase().replace(' ', '_') || 'unknown',
+                  player: player,
+                  hero: null
+                }));
+                setLanePlayers(allPlayers);
+              }
+              
+              // Preload player images for the team (only once per team change)
+              if (!imageCache[`team_${teamData.id}`]) {
+                preloadPlayerImages(teamData);
+                setImageCache(prev => ({ ...prev, [`team_${teamData.id}`]: true }));
+                  }
+              }
+            } else {
               setTeamPlayers(null);
             }
+          } catch (error) {
+            console.error('Error fetching active team:', error);
+            setTeamPlayers(null);
           }
-        } catch (error) {
-          console.error('Error loading team data:', error);
-          // Fallback to localStorage data
-          const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
-          setTeamPlayers(latestTeam || null);
-        } finally {
-          cleanup(); // Call cleanup function
-          setIsLoadingTeam(false);
         }
-      };
+      } catch (error) {
+        console.error('Error loading team data:', error);
+        // Fallback to localStorage data
+        const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
+        setTeamPlayers(latestTeam || null);
+      } finally {
+        cleanup(); // Call cleanup function
+        setIsLoadingTeam(false);
+      }
+    };
 
-      loadTeamData();
-    }, [currentTeamId]); // Only re-run when team changes, not when preloadPlayerImages changes
+    loadTeamData();
+  }, [currentTeamId]); // Only re-run when team changes, not when preloadPlayerImages changes
 
   // Listen for team changes and page visibility changes
   useEffect(() => {
@@ -1022,7 +1807,18 @@ function PlayersStatistic() {
         try {
           // First, try to calculate statistics directly from match data (like Hero Statistics)
           console.log('Attempting to calculate player statistics from match data...');
-          await calculatePlayerStatsFromMatches();
+          
+          // Calculate stats for all players in parallel
+          const players = teamPlayers?.players_data || teamPlayers?.players || [];
+          const promises = players.map(player => {
+            const playerIdentifier = `${player.name}_${player.role || 'unknown'}`;
+            return Promise.allSettled([
+              calculateHeroStatsFromMatches(playerIdentifier, player),
+              calculateH2HStatsFromMatches(playerIdentifier, player)
+            ]);
+          });
+          
+          await Promise.allSettled(promises);
           
           // Check if we got any data from the direct calculation
           const hasData = Object.keys(allPlayerStats).length > 0;
@@ -1120,11 +1916,76 @@ function PlayersStatistic() {
       
       // Only refresh if the update is for the current team
       if (teamId && teamPlayers?.id && teamId === teamPlayers.id) {
-        console.log('Match updated, refreshing player statistics from backend API...', { matchId, teamId, matchData });
+        console.log('🔄 Match updated, clearing cache and refreshing player statistics...', { matchId, teamId, matchData });
+        
+        // Clear the cache to force fresh data fetch
+        setAllPlayerStats({});
+        setAllPlayerH2HStats({});
+        
+        // Clear localStorage for all players to force fresh data
+        const playersArray = teamPlayers?.players_data || teamPlayers?.players || [];
+        playersArray.forEach(player => {
+          if (player.name && player.role) {
+            const playerIdentifier = getPlayerIdentifier(player.name, player.role);
+            localStorage.removeItem(`heroStats_${playerIdentifier}`);
+            localStorage.removeItem(`heroH2HStats_${playerIdentifier}`);
+          }
+        });
+        console.log(`🗑️ Cleared localStorage for all players due to match update`);
         
         // Force refresh by incrementing the forceUpdate counter
         // This will trigger the main useEffect that fetches stats from the backend API
         setForceUpdate(prev => prev + 1);
+        
+        // Also clear the global caches to ensure fresh data
+        if (window.playerStatsCache) {
+          Object.keys(window.playerStatsCache).forEach(key => {
+            if (key.includes(teamId)) {
+              delete window.playerStatsCache[key];
+            }
+          });
+        }
+        
+        if (window.playerH2HStatsCache) {
+          Object.keys(window.playerH2HStatsCache).forEach(key => {
+            if (key.includes(teamId)) {
+              delete window.playerH2HStatsCache[key];
+            }
+          });
+        }
+        
+        // Clear matches cache to ensure fresh data from API
+        if (window.matchesCache) {
+          Object.keys(window.matchesCache.data || {}).forEach(key => {
+            if (key.includes(teamId)) {
+              delete window.matchesCache.data[key];
+            }
+          });
+          Object.keys(window.matchesCache.isLoading || {}).forEach(key => {
+            if (key.includes(teamId)) {
+              delete window.matchesCache.isLoading[key];
+            }
+          });
+        }
+        
+        console.log(`🔄 All caches cleared for team ${teamId}, forcing fresh data fetch`);
+        
+        // If a modal is currently open, refresh its data too
+        if (modalInfo && modalInfo.player) {
+          console.log(`🔄 Refreshing modal data for ${modalInfo.player.name} due to match update`);
+          // Trigger a re-fetch for the currently open modal
+          const playerIdentifier = modalInfo.player.identifier || getPlayerIdentifier(modalInfo.player.name, modalInfo.player.role);
+          setAllPlayerStats(prev => {
+            const newStats = { ...prev };
+            delete newStats[playerIdentifier]; // Remove from cache to force refresh
+            return newStats;
+          });
+          setAllPlayerH2HStats(prev => {
+            const newH2HStats = { ...prev };
+            delete newH2HStats[playerIdentifier]; // Remove from cache to force refresh
+            return newH2HStats;
+          });
+        }
       }
     };
 
@@ -1135,7 +1996,7 @@ function PlayersStatistic() {
     return () => {
       window.removeEventListener('matchUpdated', handleMatchUpdate);
     };
-  }, [teamPlayers?.id]); // Remove stats dependencies to avoid infinite loops
+  }, [teamPlayers?.id, modalInfo]); // Include modalInfo to handle current modal refresh
 
   useEffect(() => {
     const latestMatch = JSON.parse(localStorage.getItem('latestMatch'));
@@ -1158,199 +2019,6 @@ function PlayersStatistic() {
     return teamPlayers && teamPlayers.teamName ? teamPlayers.teamName : 'Unknown Team';
   }, [teamPlayers, isLoadingTeam]);
 
-  // Function to calculate player statistics directly from match data (like Hero Statistics)
-  const calculatePlayerStatsFromMatches = useCallback(async () => {
-    if (!teamPlayers?.id || !teamPlayers?.teamName) {
-      console.log('No team data available for calculating player stats from matches');
-      return;
-    }
-
-    try {
-      console.log('Calculating player statistics from match data...', {
-        teamId: teamPlayers.id,
-        teamName: teamPlayers.teamName,
-        matchMode
-      });
-
-      // Get matches data using the global function
-      const matches = await getMatchesData(teamPlayers.id, matchMode);
-      console.log('Retrieved matches for player stats calculation:', matches?.length || 0);
-
-      if (!matches || matches.length === 0) {
-        console.log('No matches found for player stats calculation');
-        return;
-      }
-
-      const playersArray = teamPlayers?.players_data || teamPlayers?.players;
-      if (!playersArray || playersArray.length === 0) {
-        console.log('No players found for stats calculation');
-        return;
-      }
-
-      const statsObj = {};
-      const h2hStatsObj = {};
-
-      // Process each player
-      for (const player of playersArray) {
-        if (!player.name || !player.role) continue;
-
-        const playerIdentifier = getPlayerIdentifier(player.name, player.role);
-        console.log(`Calculating stats for ${player.name} (${player.role})`);
-
-        // Initialize player stats
-        const playerStats = {
-          player_name: player.name,
-          player_role: player.role,
-          total_matches: 0,
-          wins: 0,
-          losses: 0,
-          win_rate: 0,
-          hero_stats: {}
-        };
-
-        const playerH2HStats = {
-          player_name: player.name,
-          player_role: player.role,
-          h2h_stats: {}
-        };
-
-        // Process each match
-        matches.forEach(match => {
-          const matchWinner = match.winner;
-          
-          // Find the team that matches our current team (with fallback matching)
-          let ourTeam = match.teams.find(team => team.team === teamPlayers.teamName);
-          
-          // If exact match not found, try case-insensitive matching
-          if (!ourTeam) {
-            ourTeam = match.teams.find(team => 
-              team.team && team.team.toLowerCase() === teamPlayers.teamName.toLowerCase()
-            );
-          }
-          
-          // If still not found, try partial matching
-          if (!ourTeam) {
-            ourTeam = match.teams.find(team => 
-              team.team && team.team.includes(teamPlayers.teamName)
-            );
-          }
-          
-          if (!ourTeam) {
-            console.log(`No team found for ${teamPlayers.teamName} in match:`, match.teams.map(t => t.team));
-            return;
-          }
-
-          const isWinningTeam = ourTeam.team === matchWinner;
-          
-          // Get all picks for this team
-          const allPicks = [
-            ...(ourTeam.picks1 || []),
-            ...(ourTeam.picks2 || [])
-          ];
-
-          console.log(`Processing match for ${player.name}:`, {
-            matchId: match.id,
-            ourTeam: ourTeam.team,
-            allPicks: allPicks.length,
-            picks: allPicks
-          });
-
-          // Check if this player played in this match
-          const playerPick = allPicks.find(pick => {
-            if (typeof pick === 'string') return false; // Skip string picks
-            
-            // Try exact match first
-            let matches = pick.player && pick.player.name === player.name && pick.player.role === player.role;
-            
-            // If no exact match, try case-insensitive name matching
-            if (!matches && pick.player) {
-              matches = pick.player.name && 
-                       pick.player.name.toLowerCase() === player.name.toLowerCase() && 
-                       pick.player.role === player.role;
-            }
-            
-            // If still no match, try partial name matching
-            if (!matches && pick.player) {
-              matches = pick.player.name && 
-                       pick.player.name.includes(player.name) && 
-                       pick.player.role === player.role;
-            }
-            
-            if (matches) {
-              console.log(`Found player pick for ${player.name}:`, pick);
-            }
-            return matches;
-          });
-
-          if (playerPick) {
-            playerStats.total_matches++;
-            if (isWinningTeam) {
-              playerStats.wins++;
-            } else {
-              playerStats.losses++;
-            }
-
-            // Add hero stats
-            const heroName = playerPick.hero || playerPick.name;
-            if (heroName) {
-              if (!playerStats.hero_stats[heroName]) {
-                playerStats.hero_stats[heroName] = {
-                  hero_name: heroName,
-                  matches: 0,
-                  wins: 0,
-                  losses: 0,
-                  win_rate: 0
-                };
-              }
-              
-              playerStats.hero_stats[heroName].matches++;
-              if (isWinningTeam) {
-                playerStats.hero_stats[heroName].wins++;
-              } else {
-                playerStats.hero_stats[heroName].losses++;
-              }
-            }
-          }
-        });
-
-        // Calculate win rates
-        if (playerStats.total_matches > 0) {
-          playerStats.win_rate = (playerStats.wins / playerStats.total_matches) * 100;
-        }
-
-        // Calculate hero win rates
-        Object.values(playerStats.hero_stats).forEach(heroStat => {
-          if (heroStat.matches > 0) {
-            heroStat.win_rate = (heroStat.wins / heroStat.matches) * 100;
-          }
-        });
-
-        statsObj[playerIdentifier] = playerStats;
-        h2hStatsObj[playerIdentifier] = playerH2HStats;
-
-        console.log(`Calculated stats for ${player.name}:`, {
-          total_matches: playerStats.total_matches,
-          wins: playerStats.wins,
-          losses: playerStats.losses,
-          win_rate: playerStats.win_rate,
-          heroes_count: Object.keys(playerStats.hero_stats).length,
-          hero_stats: playerStats.hero_stats
-        });
-      }
-
-      // Update the state with calculated statistics
-      setAllPlayerStats(statsObj);
-      setAllPlayerH2HStats(h2hStatsObj);
-      
-      console.log('Player statistics calculated from match data:', {
-        players_count: Object.keys(statsObj).length,
-        stats: statsObj
-      });
-
-    } catch (error) {
-      console.error('Error calculating player statistics from matches:', error);
-    }
-  }, [teamPlayers?.id, teamPlayers?.teamName, teamPlayers?.players_data, teamPlayers?.players, matchMode, getPlayerIdentifier]);
 
   // Function to get team logo URL
   const getTeamLogo = useCallback(() => {
@@ -1385,125 +2053,107 @@ function PlayersStatistic() {
     return logoUrl;
   }, [teamPlayers]);
 
-  // Use cached stats for modal - instant display
+  // ULTRA-ROBUST data loading with aggressive persistence and recovery
   useEffect(() => {
     if (modalInfo && modalInfo.player && modalInfo.player.name) {
       const playerIdentifier = modalInfo.player.identifier || getPlayerIdentifier(modalInfo.player.name, modalInfo.player.role);
-      const cached = allPlayerStats[playerIdentifier];
-      const cachedH2H = allPlayerH2HStats[playerIdentifier];
       
-      // Set loading state when modal opens and clear previous stats
+      console.log(`🚀 Opening modal for player: ${modalInfo.player.name} (${playerIdentifier})`);
+      
+      // FORCE FRESH CALCULATION - Clear cache and recalculate
+      const loadPlayerData = async () => {
       setIsLoadingStats(true);
-      setHeroStats([]);
-      setHeroH2HStats([]);
-      
-      // Set stats immediately from cache if available
-      if (cached) {
-        setHeroStats(cached);
-      }
-      if (cachedH2H) {
-        setHeroH2HStats(cachedH2H);
-      }
-      
-      // If both are cached, we can hide loading immediately
-      if (cached && cachedH2H) {
-        setIsLoadingStats(false);
-      }
-      
-      // Load player evaluation data for this specific player
-      const savedPlayerEvaluation = localStorage.getItem(`playerEvaluation_${playerIdentifier}`);
-      if (savedPlayerEvaluation) {
-        setPlayerEvaluation(JSON.parse(savedPlayerEvaluation));
-      } else {
-        // Reset to default state for new player
-        setPlayerEvaluation({
-          date: '',
-          name: '',
-          role: '',
-          notes: '',
-          qualities: {
-            'In-Game knowledge': null,
-            'Reflex': null,
-            'Skills': null,
-            'Communications': null,
-            'Technical Skill': null,
-            'Attitude': null,
-            'Decision Making': null,
-            'Hero Pool': null,
-            'Skillshots': null,
-            'Team Material': null
-          },
-          comments: Array(10).fill('')
-        });
-      }
-      
-      // Load hero evaluation data for this specific player
-      const savedHeroEvaluation = localStorage.getItem(`heroEvaluation_${playerIdentifier}`);
-      if (savedHeroEvaluation) {
-        setHeroEvaluation(JSON.parse(savedHeroEvaluation));
-      } else {
-        // Reset to default state for new player
-        setHeroEvaluation({
-          date: '',
-          blackHeroes: Array(15).fill(''),
-          blueHeroes: Array(15).fill(''),
-          redHeroes: Array(15).fill(''),
-          commitment: '',
-          goal: '',
-          roleMeaning: ''
-        });
-      }
-      
-      // If not cached, fetch (fallback)
-      if (!cached || !cachedH2H) {
-        const teamName = getCurrentTeamName();
-        const role = modalInfo.player.role;
         
-        const fetchPromises = [];
+        console.log(`🔄 FORCING fresh calculation for ${modalInfo.player.name} - clearing all caches`);
         
-        if (!cached) {
-          fetchPromises.push(
-            fetch(buildApiUrl(`/players/${encodeURIComponent(modalInfo.player.name)}/hero-stats-by-team?teamName=${encodeURIComponent(teamName)}&role=${encodeURIComponent(role)}&match_type=${matchMode}`), {
-              headers: {
-                'X-Active-Team-ID': teamPlayers?.id
-              }
-            })
-              .then(res => res.json())
-              .then(data => setHeroStats(data))
-          );
-        }
-        
-        if (!cachedH2H) {
-          fetchPromises.push(
-            fetch(buildApiUrl(`/players/${encodeURIComponent(modalInfo.player.name)}/hero-h2h-stats-by-team?teamName=${encodeURIComponent(teamName)}&role=${encodeURIComponent(role)}&match_type=${matchMode}`), {
-              headers: {
-                'X-Active-Team-ID': teamPlayers?.id
-              }
-            })
-              .then(res => res.json())
-              .then(data => setHeroH2HStats(data))
-          );
-        }
-        
-        // Wait for all fetches to complete before hiding loading
-        Promise.all(fetchPromises)
-          .then(() => {
-            setIsLoadingStats(false);
-          })
-          .catch((error) => {
-            console.error('Error fetching player stats:', error);
-            setIsLoadingStats(false);
+        // Clear all caches for this player to force fresh calculation
+        const teamId = teamPlayers?.id;
+        if (teamId) {
+          // Clear localStorage
+          Object.keys(localStorage).forEach(key => {
+            if (key.includes(`heroStats_${playerIdentifier}`) || key.includes(`heroH2HStats_${playerIdentifier}`)) {
+              localStorage.removeItem(key);
+            }
           });
+          
+          // Clear sessionStorage
+          Object.keys(sessionStorage).forEach(key => {
+            if (key.includes(`heroStats_${playerIdentifier}`) || key.includes(`heroH2HStats_${playerIdentifier}`)) {
+              sessionStorage.removeItem(key);
+            }
+          });
+          
+          // Clear global caches
+          if (window.playerStatsCache && window.playerStatsCache[playerIdentifier]) {
+            delete window.playerStatsCache[playerIdentifier];
+          }
+          if (window.playerH2HStatsCache && window.playerH2HStatsCache[playerIdentifier]) {
+            delete window.playerH2HStatsCache[playerIdentifier];
+          }
+          
+          // Clear component state
+          setAllPlayerStats(prev => {
+            const newState = { ...prev };
+            delete newState[playerIdentifier];
+            return newState;
+          });
+          setAllPlayerH2HStats(prev => {
+            const newState = { ...prev };
+            delete newState[playerIdentifier];
+            return newState;
+          });
+        }
+        
+        // Force fresh calculation
+        try {
+          console.log(`🔄 Calculating fresh hero stats for ${modalInfo.player.name}`);
+          await calculateHeroStatsFromMatches(playerIdentifier, modalInfo.player);
+          
+          console.log(`🔄 Calculating fresh H2H stats for ${modalInfo.player.name}`);
+          await calculateH2HStatsFromMatches(playerIdentifier, modalInfo.player);
+          
+          console.log(`✅ Fresh calculation completed for ${modalInfo.player.name}`);
+        } catch (error) {
+          console.error(`❌ Error in fresh calculation for ${modalInfo.player.name}:`, error);
+        } finally {
+          setIsLoadingStats(false);
+        }
+      };
+      
+      loadPlayerData();
       } else {
-        // If all data is cached, hide loading immediately since both tables will show
-        setIsLoadingStats(false);
-      }
-    } else {
       setHeroStats([]);
       setHeroH2HStats([]);
-      setIsLoadingStats(false);
+        setIsLoadingStats(false);
+      }
+  }, [modalInfo, teamPlayers?.id, matchMode, calculateHeroStatsFromMatches, calculateH2HStatsFromMatches]);
+
+  // Handle mode changes specifically - trigger hero stats recalculation when modal is open
+  useEffect(() => {
+    if (modalInfo && modalInfo.player && teamPlayers?.id) {
+      console.log(`🔄 Mode changed to ${matchMode}, triggering hero stats recalculation for ${modalInfo.player.name}`);
+      
+      // Clear current stats to force fresh calculation
+      setHeroStats([]);
+      setHeroH2HStats([]);
+      setIsLoadingStats(true);
+      
+      // Force fresh calculation from matches for the modal
+      const playerIdentifier = `${modalInfo.player.name}_${modalInfo.player.role || 'unknown'}`;
+      const recalculateStats = async () => {
+        try {
+          await Promise.allSettled([
+            calculateHeroStatsFromMatches(playerIdentifier, modalInfo.player),
+            calculateH2HStatsFromMatches(playerIdentifier, modalInfo.player)
+          ]);
+        } catch (error) {
+          console.error('Error recalculating stats after mode change:', error);
+        }
+      };
+      
+      recalculateStats();
     }
-  }, [modalInfo, allPlayerStats, allPlayerH2HStats, getCurrentTeamName, teamPlayers?.id]);
+  }, [matchMode, calculateHeroStatsFromMatches, calculateH2HStatsFromMatches]); // Only trigger when matchMode changes
 
   // Utility functions
   function getPlayerNameForLane(laneKey, laneIdx) {
@@ -1994,7 +2644,18 @@ ${diagnosis.team_data.players.some(p => !p.role) ? '❌ Some team data players h
     // Recalculate player statistics to reflect the updated player data
     try {
       console.log('Recalculating player statistics after player update...');
-      await calculatePlayerStatsFromMatches();
+      
+      // Calculate stats for all players in parallel
+      const players = teamPlayers?.players_data || teamPlayers?.players || [];
+      const promises = players.map(player => {
+        const playerIdentifier = `${player.name}_${player.role || 'unknown'}`;
+        return Promise.allSettled([
+          calculateHeroStatsFromMatches(playerIdentifier, player),
+          calculateH2HStatsFromMatches(playerIdentifier, player)
+        ]);
+      });
+      
+      await Promise.allSettled(promises);
       console.log('Player statistics recalculated successfully after update');
     } catch (error) {
       console.error('Error recalculating player statistics after player update:', error);

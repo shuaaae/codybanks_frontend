@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FaChartLine, FaTrophy, FaExclamationTriangle, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
+import ScalingChart from './ScalingChart';
 
 export default function DraftAnalysis({ 
   isOpen, 
@@ -867,10 +868,20 @@ export default function DraftAnalysis({
       if (!analysis || draftDataChanged) {
         console.log('Running draft analysis - analysis exists:', !!analysis, 'draft changed:', draftDataChanged);
         setLastDraftData(draftData);
-      analyzeDraft();
+        analyzeDraft();
       } else {
         console.log('Using cached analysis data');
-    }
+      }
+    } else if (isOpen && !draftData) {
+      // Clear analysis if no draft data
+      console.log('Clearing analysis - no draft data');
+      setAnalysis(null);
+      setLastDraftData(null);
+    } else if (!isOpen) {
+      // Clear analysis when modal is closed
+      console.log('Clearing analysis - modal closed');
+      setAnalysis(null);
+      setLastDraftData(null);
     }
   }, [isOpen, draftData, analyzeDraft, analysis, lastDraftData]);
 
@@ -1173,6 +1184,15 @@ export default function DraftAnalysis({
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Scaling Chart */}
+              <div className="mt-6">
+                <ScalingChart 
+                  blueTeamPicks={analysis.blueTeam.picks}
+                  redTeamPicks={analysis.redTeam.picks}
+                  heroList={heroList}
+                />
               </div>
 
                              {/* Data Source */}

@@ -101,15 +101,34 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
   };
 
   // Handle download draft image
-  const handleDownloadDraft = (draft) => {
+  const handleDownloadDraft = async (draft) => {
     if (draft.image_url) {
-      const link = document.createElement('a');
-      // Use PNG extension to match the PNG data format
-      link.download = `draft-${draft.blue_team_name}-vs-${draft.red_team_name}-${new Date(draft.created_at).toISOString().split('T')[0]}.png`;
-      link.href = draft.image_url;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      try {
+        // Fetch the image as a blob to force download
+        const response = await fetch(draft.image_url);
+        if (!response.ok) {
+          throw new Error('Failed to fetch image');
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        // Use PNG extension to match the PNG data format
+        link.download = `draft-${draft.blue_team_name}-vs-${draft.red_team_name}-${new Date(draft.created_at).toISOString().split('T')[0]}.png`;
+        link.href = url;
+        link.style.display = 'none';
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Clean up the object URL
+        window.URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error('Error downloading image:', error);
+        alert('Failed to download image. Please try again.');
+      }
     } else {
       alert('No image data available for this draft.');
     }
