@@ -1,4 +1,5 @@
 import React from 'react';
+import TimerToggle from './TimerToggle';
 
 export default function DraftControls({
   timerActive,
@@ -16,32 +17,21 @@ export default function DraftControls({
   areLaneAssignmentsValid = true,
   onShowDraftHistory,
   onShowDraftAnalysis,
-  onCompleteDraft
+  onCompleteDraft,
+  timerEnabled,
+  setTimerEnabled
 }) {
   // Check if start button should be disabled
   const isStartDisabled = !areAllLanesAssigned || !areLaneAssignmentsValid;
   
   return (
     <div className="flex flex-col items-center gap-4 mt-8">
-      {/* Lane assignment status */}
-      {!areAllLanesAssigned && (
-        <div className="px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold flex items-center gap-2">
-          <span className="text-xs">⚠️</span>
-          Please assign all lanes for both teams
-        </div>
-      )}
-      {areAllLanesAssigned && !areLaneAssignmentsValid && (
-        <div className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold flex items-center gap-2">
-          <span className="text-xs">❌</span>
-          Each lane must be assigned only once per team
-        </div>
-      )}
-      {areAllLanesAssigned && areLaneAssignmentsValid && (
-        <div className="px-4 py-2 rounded-lg bg-green-600 text-white font-semibold flex items-center gap-2">
-          <span className="text-xs">✅</span>
-          All lanes assigned correctly
-        </div>
-      )}
+      {/* Timer Toggle */}
+      <TimerToggle 
+        timerEnabled={timerEnabled} 
+        setTimerEnabled={setTimerEnabled}
+        isDraftStarted={timerActive}
+      />
       
       {/* Control buttons */}
       <div className="flex justify-center items-center gap-6">

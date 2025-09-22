@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 export default function DeleteConfirmModal({
   showDeleteConfirmModal,
@@ -7,15 +7,37 @@ export default function DeleteConfirmModal({
   handleConfirmDelete,
   handleCancelDelete
 }) {
-  if (!showDeleteConfirmModal) return null;
+  const [isVisible, setIsVisible] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  useEffect(() => {
+    if (showDeleteConfirmModal) {
+      setIsVisible(true);
+      // Reset animation state and then start animation
+      setIsAnimating(false);
+      setTimeout(() => setIsAnimating(true), 10);
+    } else {
+      setIsAnimating(false);
+      // Wait for animation to complete before hiding
+      setTimeout(() => setIsVisible(false), 300);
+    }
+  }, [showDeleteConfirmModal]);
+
+  if (!isVisible) return null;
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80 backdrop-blur-sm p-4"
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black backdrop-blur-sm p-4 transition-all duration-300 ${
+        isAnimating ? 'bg-opacity-80' : 'bg-opacity-0'
+      }`}
       onClick={handleCancelDelete}
     >
       <div 
-        className="relative bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-3xl border border-gray-600 shadow-2xl w-[95vw] max-w-md flex flex-col overflow-hidden"
+        className={`relative bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-3xl border border-gray-600 shadow-2xl w-[95vw] max-w-md flex flex-col overflow-hidden transition-all duration-300 transform ${
+          isAnimating 
+            ? 'scale-100 opacity-100 translate-y-0' 
+            : 'scale-95 opacity-0 translate-y-4'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Background Pattern */}

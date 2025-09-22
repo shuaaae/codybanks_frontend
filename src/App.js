@@ -7,6 +7,7 @@ import LandingPage from './screens/LandingPage';
 import MockDraft from './screens/MockDraft';
 import PlayersStatistic from './screens/PlayersStatistic';
 import WeeklyReport from './screens/WeeklyReport';
+import TierListPage from './screens/TierListPage';
 import AdminLogin from './admin/AdminLogin';
 import AdminDashboard from './admin/AdminDashboard';
 import AdminIndex from './admin/AdminIndex';
@@ -135,6 +136,15 @@ export const getMatchesData = async (teamId = null, matchType = 'scrim') => {
 
     const data = await response.json();
     
+    // Debug: Log the raw API response to check for annual_map field
+    console.log('API Response - Raw matches data:', data);
+    if (data && data.length > 0) {
+      console.log('API Response - First match sample:', data[0]);
+      console.log('API Response - First match keys:', Object.keys(data[0]));
+      console.log('API Response - First match annual_map:', data[0].annual_map);
+      console.log('API Response - First match annualMap:', data[0].annualMap);
+    }
+    
     // Cache the data for this specific combination
     matchesCache.data[cacheKey] = {
       data: data,
@@ -246,6 +256,11 @@ function AppRoutes({ setLoading }) {
         <Route path="/weekly-report" element={
           <ProtectedRoute>
             <WeeklyReport />
+          </ProtectedRoute>
+        } />
+        <Route path="/tier-list" element={
+          <ProtectedRoute>
+            <TierListPage />
           </ProtectedRoute>
         } />
       </Routes>

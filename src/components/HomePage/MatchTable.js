@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { FaTrash, FaEdit } from 'react-icons/fa';
 
 // Optimized hero image component
@@ -69,8 +69,16 @@ const OptimizedHeroImage = React.memo(({ heroName, size = 40, isBan = false, cla
 // Optimized ban hero icon component
 const OptimizedBanHeroIcon = React.memo(({ heroName, heroMap }) => {
   const [imageError, setImageError] = React.useState(false);
+  
+  // Add safety checks
+  if (!heroName || typeof heroName !== 'string' || !heroMap) {
+    return (
+      <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#23283a', border: '2px solid #f87171', display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
+    );
+  }
+  
   const hero = heroMap.get(heroName);
-  const imagePath = hero ? `https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}` : null;
+  const imagePath = hero && hero.role && hero.image ? `https://api.coachdatastatistics.site/heroes/${hero.role.trim().toLowerCase()}/${hero.image}` : null;
   
   if (!hero || !imagePath) {
     return (
@@ -127,8 +135,89 @@ export default function MatchTable({
   heroMap,
   setCurrentPage
 }) {
+  // State for tracking which matches should be animated
+  const [animatedMatches, setAnimatedMatches] = useState(new Set());
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  // Debug: Log matches data when component receives it
+  React.useEffect(() => {
+    if (matches && matches.length > 0) {
+      console.log('=== MATCH TABLE DEBUG ===');
+      console.log('Matches received in MatchTable:', matches.length);
+      matches.forEach((match, index) => {
+        console.log(`MatchTable Match ${index + 1}:`, {
+          id: match.id,
+          match_date: match.match_date,
+          teams: match.teams?.map(team => ({
+            team: team.team,
+            team_color: team.team_color,
+            banning_phase1: team.banning_phase1,
+            banning_phase2: team.banning_phase2,
+            picks1: team.picks1,
+            picks2: team.picks2
+          }))
+        });
+      });
+      console.log('=== END MATCH TABLE DEBUG ===');
+    }
+  }, [matches]);
+
+  // Animation effect when matches change
+  useEffect(() => {
+    if (matches && matches.length > 0 && !isLoading && !isRefreshing) {
+      setIsAnimating(true);
+      setAnimatedMatches(new Set());
+      
+      // Get current page matches
+      const currentPageMatches = matches.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+      
+      // Animate each match with staggered timing
+      currentPageMatches.forEach((match, index) => {
+        setTimeout(() => {
+          setAnimatedMatches(prev => new Set([...prev, match.id]));
+        }, index * 100); // 100ms delay between each match
+      });
+      
+      // Stop animating after all matches are shown
+      setTimeout(() => {
+        setIsAnimating(false);
+      }, currentPageMatches.length * 100 + 500);
+    }
+  }, [matches, currentPage, itemsPerPage, isLoading, isRefreshing]);
+
   return (
-    <div style={{ maxHeight: '650px', overflowY: 'auto', borderRadius: '1rem', marginBottom: 8, paddingBottom: 8, scrollbarWidth: 'thin', scrollbarColor: 'transparent transparent' }} className="hide-scrollbar-buttons">
+    <>
+      {/* CSS Animation Styles */}
+      <style>
+        {`
+          @keyframes swipeInFromLeft {
+            0% {
+              transform: translateX(-100%);
+              opacity: 0;
+            }
+            50% {
+              opacity: 0.7;
+            }
+            100% {
+              transform: translateX(0);
+              opacity: 1;
+            }
+          }
+          
+          .match-row-animate {
+            animation: swipeInFromLeft 0.6s ease-out forwards;
+            transform: translateX(-100%);
+            opacity: 0;
+          }
+          
+          .match-row-animated {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        `}
+      </style>
+      
+      <div style={{ maxHeight: '650px', overflowY: 'auto', borderRadius: '1rem', marginBottom: 8, paddingBottom: 8, scrollbarWidth: 'thin', scrollbarColor: 'transparent transparent' }} className="hide-scrollbar-buttons">
       {(() => {
         console.log('Render debug:', { isLoading, errorMessage, matchesLength: matches?.length, matches });
         return null;
@@ -191,7 +280,8 @@ export default function MatchTable({
                     data-match-id={match.id}
                     className={
                       `transition-all duration-300 ease-out cursor-pointer rounded-lg ` +
-                      (hoveredMatchId === match.id ? 'bg-blue-900/40 shadow-lg' : 'hover:bg-blue-900/20 hover:shadow-md')
+                      (hoveredMatchId === match.id ? 'bg-blue-900/40 shadow-lg' : 'hover:bg-blue-900/20 hover:shadow-md') +
+                      (animatedMatches.has(match.id) ? ' match-row-animated' : ' match-row-animate')
                     }
                     onMouseEnter={(e) => {
                       // Only trigger if hovering over the table cell background (not interactive elements)
@@ -267,17 +357,62 @@ export default function MatchTable({
                     </td>
                     <td className="py-3 px-1 text-center align-middle min-w-[120px]">
                       <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                        {Array.isArray(team.banning_phase1)
-                          ? team.banning_phase1.map(heroName => {
-                              const hero = heroMap.get(heroName);
-                              return hero ? (
-                                <div key={heroName} className="hero-icon" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                                  <OptimizedBanHeroIcon heroName={heroName} heroMap={heroMap} />
-                                  <span style={{ fontSize: '10px', color: '#f87171', fontWeight: 'bold' }}>{heroName}</span>
-                                </div>
-                              ) : null;
-                            })
-                          : null}
+                        {(() => {
+                          // Debug logging for this specific team's banning data
+                          console.log(`Team ${team.team} (${team.team_color}) banning_phase1:`, team.banning_phase1);
+                          if (Array.isArray(team.banning_phase1) && team.banning_phase1.length > 0) {
+                            console.log(`First ban item structure:`, team.banning_phase1[0]);
+                          }
+                          
+                          if (Array.isArray(team.banning_phase1) && team.banning_phase1.length > 0) {
+                            const validBans = team.banning_phase1
+                              .map(banItem => {
+                                // Handle both string and object formats
+                                if (typeof banItem === 'string') {
+                                  return banItem.trim() !== '' ? banItem : null;
+                                } else if (typeof banItem === 'object' && banItem !== null) {
+                                  // Extract hero name from object (could be 'hero', 'name', or 'heroName' property)
+                                  return banItem.hero || banItem.name || banItem.heroName || null;
+                                }
+                                return null;
+                              })
+                              .filter(heroName => heroName && typeof heroName === 'string' && heroName.trim() !== '');
+                            
+                            console.log(`Valid bans for ${team.team}:`, validBans);
+                            
+                            if (validBans.length > 0) {
+                              return validBans.map(heroName => {
+                                try {
+                                  const hero = heroMap.get(heroName);
+                                  console.log(`Looking up hero ${heroName}:`, hero);
+                                  return hero ? (
+                                    <div key={heroName} className="hero-icon" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                                      <OptimizedBanHeroIcon heroName={heroName} heroMap={heroMap} />
+                                      <span style={{ fontSize: '10px', color: '#f87171', fontWeight: 'bold' }}>{heroName}</span>
+                                    </div>
+                                  ) : (
+                                    <div key={heroName} className="hero-icon" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#23283a', border: '2px solid #f87171', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <span style={{ fontSize: '8px', color: '#f87171' }}>?</span>
+                                      </div>
+                                      <span style={{ fontSize: '10px', color: '#f87171', fontWeight: 'bold' }}>{heroName}</span>
+                                    </div>
+                                  );
+                                } catch (error) {
+                                  console.warn('Error rendering ban hero:', heroName, error);
+                                  return null;
+                                }
+                              });
+                            }
+                          }
+                          
+                          // Show placeholder for empty banning phase
+                          return (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', fontSize: '12px' }}>
+                              No bans
+                            </div>
+                          );
+                        })()}
                       </div>
                     </td>
                     <td className="py-3 px-1 text-center align-middle min-w-[140px]">
@@ -298,17 +433,62 @@ export default function MatchTable({
                     </td>
                     <td className="py-3 px-1 text-center align-middle min-w-[140px]">
                       <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                        {Array.isArray(team.banning_phase2)
-                          ? team.banning_phase2.map(heroName => {
-                              const hero = heroMap.get(heroName);
-                              return hero ? (
-                                <div key={heroName} className="hero-icon" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                                  <OptimizedBanHeroIcon heroName={heroName} heroMap={heroMap} />
-                                  <span style={{ fontSize: '10px', color: '#f87171', fontWeight: 'bold' }}>{heroName}</span>
-                                </div>
-                              ) : null;
-                            })
-                          : null}
+                        {(() => {
+                          // Debug logging for this specific team's banning data
+                          console.log(`Team ${team.team} (${team.team_color}) banning_phase2:`, team.banning_phase2);
+                          if (Array.isArray(team.banning_phase2) && team.banning_phase2.length > 0) {
+                            console.log(`First ban item structure:`, team.banning_phase2[0]);
+                          }
+                          
+                          if (Array.isArray(team.banning_phase2) && team.banning_phase2.length > 0) {
+                            const validBans = team.banning_phase2
+                              .map(banItem => {
+                                // Handle both string and object formats
+                                if (typeof banItem === 'string') {
+                                  return banItem.trim() !== '' ? banItem : null;
+                                } else if (typeof banItem === 'object' && banItem !== null) {
+                                  // Extract hero name from object (could be 'hero', 'name', or 'heroName' property)
+                                  return banItem.hero || banItem.name || banItem.heroName || null;
+                                }
+                                return null;
+                              })
+                              .filter(heroName => heroName && typeof heroName === 'string' && heroName.trim() !== '');
+                            
+                            console.log(`Valid bans for ${team.team}:`, validBans);
+                            
+                            if (validBans.length > 0) {
+                              return validBans.map(heroName => {
+                                try {
+                                  const hero = heroMap.get(heroName);
+                                  console.log(`Looking up hero ${heroName}:`, hero);
+                                  return hero ? (
+                                    <div key={heroName} className="hero-icon" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                                      <OptimizedBanHeroIcon heroName={heroName} heroMap={heroMap} />
+                                      <span style={{ fontSize: '10px', color: '#f87171', fontWeight: 'bold' }}>{heroName}</span>
+                                    </div>
+                                  ) : (
+                                    <div key={heroName} className="hero-icon" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#23283a', border: '2px solid #f87171', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <span style={{ fontSize: '8px', color: '#f87171' }}>?</span>
+                                      </div>
+                                      <span style={{ fontSize: '10px', color: '#f87171', fontWeight: 'bold' }}>{heroName}</span>
+                                    </div>
+                                  );
+                                } catch (error) {
+                                  console.warn('Error rendering ban hero:', heroName, error);
+                                  return null;
+                                }
+                              });
+                            }
+                          }
+                          
+                          // Show placeholder for empty banning phase
+                          return (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', fontSize: '12px' }}>
+                              No bans
+                            </div>
+                          );
+                        })()}
                       </div>
                     </td>
                     <td className="py-3 px-1 text-center align-middle min-w-[140px]">
@@ -380,6 +560,7 @@ export default function MatchTable({
           </button>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 } 

@@ -104,6 +104,8 @@ export default function ExportModal({
   setLordTakenBlue,
   lordTakenRed,
   setLordTakenRed,
+  annualMap,
+  setAnnualMap,
   notes,
   setNotes,
   playstyle,
@@ -122,9 +124,28 @@ export default function ExportModal({
   setPicks,
   heroList = [],
   isEditing = false,
+  editingMatchId = null,
   currentTeamName = '',
   matchMode = 'scrim'
 }) {
+  
+  // Helper function to extract hero names from banning data (handles both strings and objects)
+  const getBanHeroNames = (banArray) => {
+    if (!Array.isArray(banArray) || banArray.length === 0) return [];
+    
+    return banArray
+      .map(banItem => {
+        // Handle both string and object formats
+        if (typeof banItem === 'string') {
+          return banItem.trim() !== '' ? banItem : null;
+        } else if (typeof banItem === 'object' && banItem !== null) {
+          // Extract hero name from object (could be 'hero', 'name', or 'heroName' property)
+          return banItem.hero || banItem.name || banItem.heroName || null;
+        }
+        return null;
+      })
+      .filter(heroName => heroName && typeof heroName === 'string' && heroName.trim() !== '');
+  };
   // Helper function to get today's date in YYYY-MM-DD format
   const getTodayDate = () => {
     const today = new Date();
@@ -135,6 +156,115 @@ export default function ExportModal({
   };
 
   const [showDraft, setShowDraft] = useState(false);
+  const [isExporting, setIsExporting] = useState(false); // Loading state for export
+  
+  // State to track original match data for comparison
+  const [originalMatchData, setOriginalMatchData] = useState(null);
+  
+  // Effect to capture original match data when editing starts
+  useEffect(() => {
+    if (isEditing && !originalMatchData) {
+      // Create a snapshot of the current match data for comparison
+      const currentMatchData = {
+        match_date: matchDate || getTodayDate(),
+        winner: winner,
+        teams: [
+          {
+            team: blueTeam,
+            team_color: 'blue',
+            banning_phase1: banning.blue1,
+            banning_phase2: banning.blue2,
+            picks1: picks.blue[1] || [],
+            picks2: picks.blue[2] || []
+          },
+          {
+            team: redTeam,
+            team_color: 'red',
+            banning_phase1: banning.red1,
+            banning_phase2: banning.red2,
+            picks1: picks.red[1] || [],
+            picks2: picks.red[2] || []
+          }
+        ],
+        turtle_taken_blue: turtleTakenBlue,
+        turtle_taken_red: turtleTakenRed,
+        lord_taken_blue: lordTakenBlue,
+        lord_taken_red: lordTakenRed,
+        annual_map: annualMap,
+        notes: notes,
+        playstyle: playstyle
+      };
+      setOriginalMatchData(currentMatchData);
+    }
+  }, [isEditing, matchDate, winner, blueTeam, redTeam, banning, picks, turtleTakenBlue, turtleTakenRed, lordTakenBlue, lordTakenRed, annualMap, notes, playstyle, originalMatchData]);
+  
+  // Function to check if there are any changes in the form
+  const hasChanges = () => {
+    if (!originalMatchData || !isEditing) return false;
+    
+    // Compare basic match data
+    const currentDate = matchDate || getTodayDate();
+    const originalDate = originalMatchData.match_date;
+    
+    if (currentDate !== originalDate) return true;
+    if (winner !== originalMatchData.winner) return true;
+    if (blueTeam !== originalMatchData.teams?.find(t => t.team_color === 'blue')?.team) return true;
+    if (redTeam !== originalMatchData.teams?.find(t => t.team_color === 'red')?.team) return true;
+    
+    // Compare banning data
+    const originalBlueTeam = originalMatchData.teams?.find(t => t.team_color === 'blue');
+    const originalRedTeam = originalMatchData.teams?.find(t => t.team_color === 'red');
+    
+    if (originalBlueTeam) {
+      const originalBlue1 = getBanHeroNames(originalBlueTeam.banning_phase1 || []);
+      const originalBlue2 = getBanHeroNames(originalBlueTeam.banning_phase2 || []);
+      
+      if (JSON.stringify(getBanHeroNames(banning.blue1)) !== JSON.stringify(originalBlue1)) return true;
+      if (JSON.stringify(getBanHeroNames(banning.blue2)) !== JSON.stringify(originalBlue2)) return true;
+    }
+    
+    if (originalRedTeam) {
+      const originalRed1 = getBanHeroNames(originalRedTeam.banning_phase1 || []);
+      const originalRed2 = getBanHeroNames(originalRedTeam.banning_phase2 || []);
+      
+      if (JSON.stringify(getBanHeroNames(banning.red1)) !== JSON.stringify(originalRed1)) return true;
+      if (JSON.stringify(getBanHeroNames(banning.red2)) !== JSON.stringify(originalRed2)) return true;
+    }
+    
+    // Compare picks data
+    if (originalBlueTeam) {
+      const originalBluePicks1 = (originalBlueTeam.picks1 || []).map(p => typeof p === 'string' ? p : p.hero).filter(Boolean);
+      const originalBluePicks2 = (originalBlueTeam.picks2 || []).map(p => typeof p === 'string' ? p : p.hero).filter(Boolean);
+      const currentBluePicks1 = (picks.blue[1] || []).map(p => p.hero).filter(Boolean);
+      const currentBluePicks2 = (picks.blue[2] || []).map(p => p.hero).filter(Boolean);
+      
+      if (JSON.stringify(originalBluePicks1) !== JSON.stringify(currentBluePicks1)) return true;
+      if (JSON.stringify(originalBluePicks2) !== JSON.stringify(currentBluePicks2)) return true;
+    }
+    
+    if (originalRedTeam) {
+      const originalRedPicks1 = (originalRedTeam.picks1 || []).map(p => typeof p === 'string' ? p : p.hero).filter(Boolean);
+      const originalRedPicks2 = (originalRedTeam.picks2 || []).map(p => typeof p === 'string' ? p : p.hero).filter(Boolean);
+      const currentRedPicks1 = (picks.red[1] || []).map(p => p.hero).filter(Boolean);
+      const currentRedPicks2 = (picks.red[2] || []).map(p => p.hero).filter(Boolean);
+      
+      if (JSON.stringify(originalRedPicks1) !== JSON.stringify(currentRedPicks1)) return true;
+      if (JSON.stringify(originalRedPicks2) !== JSON.stringify(currentRedPicks2)) return true;
+    }
+    
+    // Compare objectives
+    if (turtleTakenBlue !== originalMatchData.turtle_taken_blue) return true;
+    if (turtleTakenRed !== originalMatchData.turtle_taken_red) return true;
+    if (lordTakenBlue !== originalMatchData.lord_taken_blue) return true;
+    if (lordTakenRed !== originalMatchData.lord_taken_red) return true;
+    if (annualMap !== (originalMatchData.annual_map || '')) return true;
+    
+    // Compare notes and playstyle
+    if (notes !== (originalMatchData.notes || '')) return true;
+    if (playstyle !== (originalMatchData.playstyle || '')) return true;
+    
+    return false;
+  };
 
   // Mock Draft state for the draft interface
   const [currentStep, setCurrentStep] = useState(0);
@@ -160,100 +290,58 @@ export default function ExportModal({
     red: ['exp', 'jungler', 'mid', 'gold', 'roam']   // Fixed lane order
   });
 
+  // Track original draft state for change detection
+  const [originalDraftState, setOriginalDraftState] = useState({
+    bans: { blue: [], red: [] },
+    picks: { blue: [], red: [] },
+    laneAssignments: { blue: [], red: [] }
+  });
+
   // Keep customLaneAssignments in sync with laneAssignments
   useEffect(() => {
     setCustomLaneAssignments(laneAssignments);
   }, [laneAssignments]);
 
-  // Check for mock draft data when component mounts
-  useEffect(() => {
-    const mockDraftData = localStorage.getItem('mockDraftData');
-    if (mockDraftData) {
-      try {
-        const data = JSON.parse(mockDraftData);
-        console.log('Found mock draft data:', data);
-        
-        // Check if the data is recent (within last 5 minutes)
-        const isRecent = Date.now() - data.timestamp < 5 * 60 * 1000;
-        
-        if (isRecent) {
-          // Update team names
-          setBlueTeam(data.blueTeamName);
-          setRedTeam(data.redTeamName);
-          
-          // Update lane assignments
-          setLaneAssignments(data.customLaneAssignments);
-          setCustomLaneAssignments(data.customLaneAssignments);
-          
-          // Update bans
-          const newBanning = {
-            blue1: data.blueBans.slice(0, 3),
-            blue2: data.blueBans.slice(3, 5),
-            red1: data.redBans.slice(0, 3),
-            red2: data.redBans.slice(3, 5)
-          };
-          setBanning(newBanning);
-          
-          // Update picks - CRITICAL FIX: Use the shuffled lane assignments correctly
-          const newPicks = {
-            blue: {
-              1: data.bluePicks.slice(0, 3).map((hero, index) => ({ 
-                hero: hero.name, 
-                lane: data.customLaneAssignments.blue[index], // Use current index, not original position
-                role: hero.role 
-              })),
-              2: data.bluePicks.slice(3, 5).map((hero, index) => ({ 
-                hero: hero.name, 
-                lane: data.customLaneAssignments.blue[index + 3], // Use current index + offset, not original position
-                role: hero.role 
-              }))
-            },
-            red: {
-              1: data.redPicks.slice(0, 3).map((hero, index) => ({ 
-                hero: hero.name, 
-                lane: data.customLaneAssignments.red[index], // Use current index, not original position
-                role: hero.role 
-              })),
-              2: data.redPicks.slice(3, 5).map((hero, index) => ({ 
-                hero: hero.name, 
-                lane: data.customLaneAssignments.red[index + 3], // Use current index + offset, not original position
-                role: hero.role 
-              }))
-            }
-          };
-          setPicks(newPicks);
-          
-          // CRITICAL: Also update draftPicks state with correct lane assignments
-          const newDraftPicks = {
-            blue: data.bluePicks.map((hero, index) => ({
-              ...hero,
-              lane: data.customLaneAssignments.blue[index] || hero.lane
-            })),
-            red: data.redPicks.map((hero, index) => ({
-              ...hero,
-              lane: data.customLaneAssignments.red[index] || hero.lane
-            }))
-          };
-          setDraftPicks(newDraftPicks);
-          
-          console.log('Successfully loaded mock draft data into complete draft with shuffled lanes:', {
-            laneAssignments: data.customLaneAssignments,
-            draftPicks: newDraftPicks
-          });
-          
-          // Mark that this data has been consumed but keep it for restoration
-          const updatedData = { ...data, consumed: true };
-          localStorage.setItem('mockDraftData', JSON.stringify(updatedData));
-        } else {
-          // Remove old data only if it's really old
-          localStorage.removeItem('mockDraftData');
-        }
-      } catch (error) {
-        console.error('Error parsing mock draft data:', error);
-        localStorage.removeItem('mockDraftData');
-      }
+  // Function to check if draft has changes
+  const hasDraftChanges = () => {
+    try {
+      const currentBans = JSON.stringify(draftBans);
+      const originalBans = JSON.stringify(originalDraftState.bans);
+      const currentPicks = JSON.stringify(draftPicks);
+      const originalPicks = JSON.stringify(originalDraftState.picks);
+      const currentLanes = JSON.stringify(customLaneAssignments);
+      const originalLanes = JSON.stringify(originalDraftState.laneAssignments);
+      
+      const hasChanges = currentBans !== originalBans || 
+                        currentPicks !== originalPicks || 
+                        currentLanes !== originalLanes;
+      
+      console.log('Checking for draft changes:', {
+        hasChanges,
+        currentBans: currentBans.length,
+        originalBans: originalBans.length,
+        currentPicks: currentPicks.length,
+        originalPicks: originalPicks.length,
+        currentLanes: currentLanes.length,
+        originalLanes: originalLanes.length
+      });
+      
+      return hasChanges;
+    } catch (error) {
+      console.error('Error checking for draft changes:', error);
+      return false; // Don't show "Save Changes" if there's an error
     }
-  }, []);
+  };
+
+  // Function to reset draft to original state
+  const resetDraftToOriginal = () => {
+    setDraftBans(originalDraftState.bans);
+    setDraftPicks(originalDraftState.picks);
+    setCustomLaneAssignments(originalDraftState.laneAssignments);
+    setLaneAssignments(originalDraftState.laneAssignments);
+  };
+
+  // Mock draft data loading removed - complete draft should be independent
 
   // Add state for lane assignment alert modal
   const [showLaneAlert, setShowLaneAlert] = useState(false);
@@ -267,6 +355,164 @@ export default function ExportModal({
     blue: [null, null, null, null, null], // [exp_player, jungler_player, mid_player, gold_player, roam_player]
     red: [null, null, null, null, null]
   });
+
+  // Function to get team players from localStorage
+  const getTeamPlayers = (teamName) => {
+    try {
+      const latestTeam = JSON.parse(localStorage.getItem('latestTeam') || '{}');
+      
+      // Check if this is the current team (blue or red team name matches)
+      const isCurrentTeam = (teamName === 'blue' && blueTeam === latestTeam.teamName) || 
+                           (teamName === 'red' && redTeam === latestTeam.teamName);
+      
+      if (isCurrentTeam) {
+        // Check for players in both possible properties
+        const players = latestTeam.players || latestTeam.players_data || [];
+        if (players && players.length > 0) {
+          console.log(`✅ Found players for ${teamName} team (${latestTeam.teamName}):`, players.length);
+          return players;
+        } else {
+          console.log(`⚠️ No players found for ${teamName} team. Latest team: ${latestTeam.teamName}, Blue: ${blueTeam}, Red: ${redTeam}`);
+          console.log('Team data structure:', latestTeam);
+        }
+      } else {
+        console.log(`⚠️ No players found for ${teamName} team. Latest team: ${latestTeam.teamName}, Blue: ${blueTeam}, Red: ${redTeam}`);
+      }
+    } catch (e) {
+      console.error('Error getting team players:', e);
+    }
+    return [];
+  };
+
+  // Function to determine which team is the current team and only process that team
+  const getCurrentTeamInfo = () => {
+    const latestTeam = JSON.parse(localStorage.getItem('latestTeam') || '{}');
+    const currentTeamName = latestTeam.teamName;
+    
+    if (!currentTeamName) {
+      console.log('⚠️ No current team found in localStorage');
+      return { currentTeam: null, teamColor: null };
+    }
+    
+    // Check which team field contains the current team name
+    if (blueTeam === currentTeamName) {
+      console.log(`🎯 Current team "${currentTeamName}" is in BLUE team field`);
+      return { currentTeam: 'blue', teamColor: 'blue' };
+    } else if (redTeam === currentTeamName) {
+      console.log(`🎯 Current team "${currentTeamName}" is in RED team field`);
+      return { currentTeam: 'red', teamColor: 'red' };
+    } else {
+      console.log(`⚠️ Current team "${currentTeamName}" not found in either team field. Blue: "${blueTeam}", Red: "${redTeam}"`);
+      return { currentTeam: null, teamColor: null };
+    }
+  };
+
+  // Function to automatically assign players to their corresponding lanes
+  const autoAssignPlayersToLanes = (team) => {
+    const teamPlayers = getTeamPlayers(team);
+    if (!teamPlayers || teamPlayers.length === 0) {
+      console.warn(`No players found for ${team} team`);
+      return;
+    }
+
+    const laneOrder = ['exp', 'jungler', 'mid', 'gold', 'roam'];
+    const newAssignments = [...playerAssignments[team]];
+
+    laneOrder.forEach((lane, index) => {
+      // Only assign if no player is currently assigned to this lane
+      if (!newAssignments[index]) {
+        const playerForLane = teamPlayers.find(player => 
+          player.role && player.role.toLowerCase() === lane.toLowerCase()
+        );
+        
+        if (playerForLane) {
+          newAssignments[index] = playerForLane;
+          console.log(`✅ Auto-assigned ${playerForLane.name} to ${lane} lane for ${team} team`);
+        } else {
+          console.warn(`⚠️ No player found with role ${lane} for ${team} team`);
+        }
+      }
+    });
+
+    setPlayerAssignments(prev => ({
+      ...prev,
+      [team]: newAssignments
+    }));
+
+    return newAssignments;
+  };
+
+  // Function to automatically assign heroes to players based on their roles
+  const autoAssignHeroesToPlayers = (team) => {
+    const teamPlayers = getTeamPlayers(team);
+    if (!teamPlayers || teamPlayers.length === 0) {
+      console.warn(`No players found for ${team} team`);
+      return;
+    }
+
+    // Ensure draftPicks is properly initialized
+    if (!draftPicks || typeof draftPicks !== 'object') {
+      console.warn('DraftPicks not properly initialized, skipping auto-assignment');
+      return;
+    }
+
+    const laneOrder = ['exp', 'jungler', 'mid', 'gold', 'roam'];
+    const teamPicks = draftPicks[team] || [];
+    
+    console.log(`🔄 Auto-assigning heroes to players for ${team} team...`);
+    
+    // Process each pick and assign to the correct player based on lane
+    teamPicks.forEach((pick, index) => {
+      if (pick && pick.name && pick.lane) {
+        const lane = pick.lane.toLowerCase();
+        const laneIndex = laneOrder.indexOf(lane);
+        
+        if (laneIndex !== -1) {
+          // Find the player with the matching role
+          const playerForLane = teamPlayers.find(player => 
+            player.role && player.role.toLowerCase() === lane.toLowerCase()
+          );
+          
+          if (playerForLane && !pick.player) {
+            // Auto-assign the player to this hero pick
+            const updatedPick = {
+              ...pick,
+              player: playerForLane
+            };
+            
+            // Update the draft picks with the assigned player
+            setDraftPicks(prev => {
+              const newPicks = prev && typeof prev === 'object' ? { ...prev } : { blue: [], red: [] };
+              if (!newPicks[team]) newPicks[team] = [];
+              newPicks[team][index] = updatedPick;
+              return newPicks;
+            });
+            
+            // Update player assignments
+            setPlayerAssignments(prev => {
+              const newAssignments = prev && prev[team] ? [...prev[team]] : [null, null, null, null, null];
+              newAssignments[laneIndex] = playerForLane;
+              return {
+                ...prev,
+                [team]: newAssignments
+              };
+            });
+            
+            console.log(`✅ Auto-assigned hero ${pick.name} to player ${playerForLane.name} for ${lane} lane`);
+            
+            // Show a brief notification to the user
+            setTimeout(() => {
+              console.log(`📢 Notification: ${pick.name} was automatically assigned to ${playerForLane.name} (${lane} lane)`);
+            }, 100);
+          } else if (pick.player) {
+            console.log(`ℹ️ Hero ${pick.name} already has player assigned: ${pick.player.name}`);
+          } else {
+            console.warn(`⚠️ No player found with role ${lane} for hero ${pick.name}`);
+          }
+        }
+      }
+    });
+  };
   
   // Add loading state for lane mapping process
   const [isMappingLanes, setIsMappingLanes] = useState(false);
@@ -309,7 +555,23 @@ export default function ExportModal({
       return bluePicksComplete && redPicksComplete;
     };
     
-    // Export is disabled if:
+    // For editing mode, also check if there are changes
+    if (isEditing) {
+      const hasChangesMade = hasChanges();
+      // Export is disabled if:
+      // 1. No changes have been made, OR
+      // 2. Neither team matches the current team name, OR
+      // 3. Results field is not valid, OR
+      // 4. Turtle/Lord taken fields are empty, OR
+      // 5. Complete draft is not finished
+      return !hasChangesMade || 
+             (!blueTeamMatches && !redTeamMatches) || 
+             !resultsValid || 
+             !objectivesValid || 
+             !isDraftComplete();
+    }
+    
+    // For new matches, export is disabled if:
     // 1. Neither team matches the current team name, OR
     // 2. Results field is not valid, OR
     // 3. Turtle/Lord taken fields are empty, OR
@@ -318,6 +580,20 @@ export default function ExportModal({
            !resultsValid || 
            !objectivesValid || 
            !isDraftComplete();
+  };
+
+  // Validation for Enter Complete Draft button - prevents case mismatch issues
+  const isDraftButtonDisabled = () => {
+    if (!actualCurrentTeamName) return false; // If no team name, allow draft
+    
+    // Check if either team name matches the current team name (case-sensitive)
+    const blueTeamMatches = blueTeam && blueTeam === actualCurrentTeamName;
+    const redTeamMatches = redTeam && redTeam === actualCurrentTeamName;
+    
+    // Draft button is disabled if:
+    // 1. Neither team matches the current team name (case-sensitive), OR
+    // 2. Basic required fields are missing
+    return (!blueTeamMatches && !redTeamMatches) || !blueTeam || !redTeam || !winner;
   };
 
 
@@ -338,6 +614,34 @@ export default function ExportModal({
       }
       if (!redTeam) {
         setRedTeam('');
+      }
+      
+      // Debug team data
+      const debugLatestTeam = JSON.parse(localStorage.getItem('latestTeam') || '{}');
+      const { currentTeam, teamColor } = getCurrentTeamInfo();
+      console.log('🔍 Debug team data:', {
+        latestTeam: debugLatestTeam.teamName,
+        blueTeam,
+        redTeam,
+        currentTeam,
+        teamColor,
+        hasPlayers: !!(debugLatestTeam.players || debugLatestTeam.players_data),
+        playerCount: (debugLatestTeam.players || debugLatestTeam.players_data)?.length || 0,
+        teamDataStructure: debugLatestTeam
+      });
+      
+      // Process only the current team
+      
+      if (currentTeam) {
+        // Auto-assign players to lanes when modal opens (only for current team)
+        console.log(`Auto-assigning players to lanes on modal open for ${teamColor} team...`);
+        autoAssignPlayersToLanes(currentTeam);
+        
+        // Auto-assign heroes to players based on their roles (only for current team)
+        console.log(`Auto-assigning heroes to players on modal open for ${teamColor} team...`);
+        autoAssignHeroesToPlayers(currentTeam);
+      } else {
+        console.log('⚠️ No current team found, skipping auto-assignment');
       }
       
       // Only reconstruct player assignments if editing
@@ -412,6 +716,64 @@ export default function ExportModal({
 
 
 
+  // Extract lane assignments and player assignments from existing form data
+  const extractLaneAssignmentsFromFormData = () => {
+    const blueLanes = ['exp', 'jungler', 'mid', 'gold', 'roam']; // Default order
+    const redLanes = ['exp', 'jungler', 'mid', 'gold', 'roam']; // Default order
+    const bluePlayers = [null, null, null, null, null];
+    const redPlayers = [null, null, null, null, null];
+    
+    // Extract lane assignments and player assignments from existing picks data
+    if (picks.blue) {
+      [1, 2].forEach(phase => {
+        if (picks.blue[phase] && Array.isArray(picks.blue[phase])) {
+          picks.blue[phase].forEach((pick, phaseIndex) => {
+            if (pick && pick.lane) {
+              const slotIndex = phase === 1 ? phaseIndex : phaseIndex + 3;
+              if (slotIndex < 5) {
+                blueLanes[slotIndex] = pick.lane;
+                if (pick.player) {
+                  bluePlayers[slotIndex] = pick.player;
+                }
+              }
+            }
+          });
+        }
+      });
+    }
+    
+    if (picks.red) {
+      [1, 2].forEach(phase => {
+        if (picks.red[phase] && Array.isArray(picks.red[phase])) {
+          picks.red[phase].forEach((pick, phaseIndex) => {
+            if (pick && pick.lane) {
+              const slotIndex = phase === 1 ? phaseIndex : phaseIndex + 3;
+              if (slotIndex < 5) {
+                redLanes[slotIndex] = pick.lane;
+                if (pick.player) {
+                  redPlayers[slotIndex] = pick.player;
+                }
+              }
+            }
+          });
+        }
+      });
+    }
+    
+    // Check if any lane assignments were found
+    const defaultLaneOrder = ['exp', 'jungler', 'mid', 'gold', 'roam'];
+    const hasCustomAssignments = 
+      JSON.stringify(blueLanes) !== JSON.stringify(defaultLaneOrder) ||
+      JSON.stringify(redLanes) !== JSON.stringify(defaultLaneOrder);
+    
+    return hasCustomAssignments ? { 
+      blue: blueLanes, 
+      red: redLanes,
+      bluePlayers,
+      redPlayers
+    } : null;
+  };
+
   // Handle comprehensive draft for both teams
   const handleComprehensiveDraft = () => {
     // Initialize complete draft steps with flexible lane assignments
@@ -450,36 +812,34 @@ export default function ExportModal({
     setCurrentStep(0);
     setDraftFinished(false);
     
-    // Initialize lane assignments - preserve custom assignments if they exist
+    // Initialize lane assignments - preserve existing assignments if available
     if (!isEditing) {
-      // Check if there are custom lane assignments from MockDraft
-      const mockDraftData = localStorage.getItem('mockDraftData');
-      let initialLaneAssignments = {
-        blue: ['exp', 'jungler', 'mid', 'gold', 'roam'], // Default lane order
-        red: ['exp', 'jungler', 'mid', 'gold', 'roam']   // Default lane order
-      };
+      // Check if there are existing lane assignments that should be preserved
+      // Look for any non-default lane assignments or if the lane order has been modified
+      const defaultLaneOrder = ['exp', 'jungler', 'mid', 'gold', 'roam'];
+      const hasExistingLaneAssignments = 
+        JSON.stringify(laneAssignments.blue) !== JSON.stringify(defaultLaneOrder) ||
+        JSON.stringify(laneAssignments.red) !== JSON.stringify(defaultLaneOrder) ||
+        JSON.stringify(customLaneAssignments.blue) !== JSON.stringify(defaultLaneOrder) ||
+        JSON.stringify(customLaneAssignments.red) !== JSON.stringify(defaultLaneOrder);
       
-      if (mockDraftData) {
-        try {
-          const data = JSON.parse(mockDraftData);
-          if (data.customLaneAssignments) {
-            // Use custom lane assignments from MockDraft if available
-            initialLaneAssignments = data.customLaneAssignments;
-            console.log('Using custom lane assignments from MockDraft:', initialLaneAssignments);
-          }
-        } catch (error) {
-          console.error('Error parsing mock draft data for lane assignments:', error);
-        }
+      if (!hasExistingLaneAssignments) {
+        // Only reset to default if no custom lane assignments exist
+        let initialLaneAssignments = {
+          blue: ['exp', 'jungler', 'mid', 'gold', 'roam'], // Default lane order
+          red: ['exp', 'jungler', 'mid', 'gold', 'roam']   // Default lane order
+        };
+        
+        setLaneAssignments(initialLaneAssignments);
+        
+        // CRITICAL: Reset player assignments to ensure clean state for new matches
+        const initialPlayerAssignments = {
+          blue: [null, null, null, null, null], // [exp_player, jungler_player, mid_player, gold_player, roam_player]
+          red: [null, null, null, null, null]
+        };
+        setPlayerAssignments(initialPlayerAssignments);
       }
-      
-      setLaneAssignments(initialLaneAssignments);
-      
-      // CRITICAL: Reset player assignments to ensure clean state for new matches
-      const initialPlayerAssignments = {
-        blue: [null, null, null, null, null], // [exp_player, jungler_player, mid_player, gold_player, roam_player]
-        red: [null, null, null, null, null]
-      };
-      setPlayerAssignments(initialPlayerAssignments);
+      // If there are existing lane assignments, preserve them by not resetting
     }
     // Load existing data if available (for both editing and new matches with existing data)
     const hasExistingData = (banning.blue1 && banning.blue1.length > 0) || 
@@ -520,10 +880,22 @@ export default function ExportModal({
       
       // Convert hero names to hero objects for the draft
       const populateBans = (teamBans) => {
-        return teamBans.map(heroName => {
-          const hero = heroList.find(h => h.name === heroName);
-          return hero || { name: heroName, role: 'Unknown' };
-        });
+        return teamBans.map(banItem => {
+          // Handle both string and object formats
+          let heroName = null;
+          if (typeof banItem === 'string') {
+            heroName = banItem;
+          } else if (typeof banItem === 'object' && banItem !== null) {
+            heroName = banItem.hero || banItem.name || banItem.heroName || null;
+          }
+          
+          if (heroName) {
+            const hero = heroList.find(h => h.name === heroName);
+            return hero || { name: heroName, role: 'Unknown' };
+          }
+          
+          return null;
+        }).filter(hero => hero !== null);
       };
       
              const populatePicks = (teamPicks) => {
@@ -571,6 +943,15 @@ export default function ExportModal({
       setDraftBans(populatedBans);
       setDraftPicks(populatedPicks);
       
+      // Capture original draft state for change tracking
+      const originalState = {
+        bans: JSON.parse(JSON.stringify(populatedBans)),
+        picks: JSON.parse(JSON.stringify(populatedPicks)),
+        laneAssignments: JSON.parse(JSON.stringify(customLaneAssignments))
+      };
+      setOriginalDraftState(originalState);
+      
+      console.log('Set original draft state for change tracking:', originalState);
 
       
       // CRITICAL: Populate both lane and player assignments together to ensure consistency
@@ -578,59 +959,54 @@ export default function ExportModal({
         // Show loading indicator for lane mapping
         setIsMappingLanes(true);
         
-        const blueLanes = [null, null, null, null, null];
-        const redLanes = [null, null, null, null, null];
+        // Extract lane assignments from existing picks data
+        const blueLanes = ['exp', 'jungler', 'mid', 'gold', 'roam']; // Default order
+        const redLanes = ['exp', 'jungler', 'mid', 'gold', 'roam']; // Default order
         const bluePlayers = [null, null, null, null, null];
         const redPlayers = [null, null, null, null, null];
         
-        // CRITICAL FIX: Use customLaneAssignments for lanes (shuffled) and populatedPicks for players
-        // This ensures that after lane shuffling, players are assigned to the correct final lane positions
-        
-        // Get MockDraft data from localStorage to access customLaneAssignments
-        const mockDraftData = localStorage.getItem('mockDraftData');
-        let customLaneAssignments = null;
-        
-        if (mockDraftData) {
-          try {
-            const data = JSON.parse(mockDraftData);
-            customLaneAssignments = data.customLaneAssignments;
-          } catch (error) {
-            console.error('Error parsing mock draft data:', error);
-          }
-        }
-        
-        // First, populate lane assignments from customLaneAssignments (the shuffled lanes)
-        if (customLaneAssignments) {
-          customLaneAssignments.blue.forEach((lane, index) => {
-            blueLanes[index] = lane;
-          });
-          customLaneAssignments.red.forEach((lane, index) => {
-            redLanes[index] = lane;
+        // Extract lane assignments from existing picks
+        if (existingPicks.blue) {
+          [1, 2].forEach(phase => {
+            if (existingPicks.blue[phase] && Array.isArray(existingPicks.blue[phase])) {
+              existingPicks.blue[phase].forEach((pick, phaseIndex) => {
+                if (pick && pick.lane) {
+                  const slotIndex = phase === 1 ? phaseIndex : phaseIndex + 3;
+                  if (slotIndex < 5) {
+                    blueLanes[slotIndex] = pick.lane;
+                    if (pick.player) {
+                      bluePlayers[slotIndex] = pick.player;
+                    }
+                  }
+                }
+              });
+            }
           });
         }
         
-        // BLUE — heroes follow final lanes to the lane owners
-        const finalBlue = buildLaneAnchoredPicks('blue', populatedPicks, customLaneAssignments, playerAssignments);
-        finalBlue.forEach(({ player, hero, lane, index }) => {
-          if (!player) return;
-          bluePlayers[index] = { ...player, hero, role: lane };
-          console.log(`Blue lane-anchored => slot ${index}: ${player.name} gets ${hero} @ ${lane}`);
-        });
-
-        // RED — same logic
-        const finalRed = buildLaneAnchoredPicks('red', populatedPicks, customLaneAssignments, playerAssignments);
-        finalRed.forEach(({ player, hero, lane, index }) => {
-          if (!player) return;
-          redPlayers[index] = { ...player, hero, role: lane };
-          console.log(`Red lane-anchored  => slot ${index}: ${player.name} gets ${hero} @ ${lane}`);
-        });
+        if (existingPicks.red) {
+          [1, 2].forEach(phase => {
+            if (existingPicks.red[phase] && Array.isArray(existingPicks.red[phase])) {
+              existingPicks.red[phase].forEach((pick, phaseIndex) => {
+                if (pick && pick.lane) {
+                  const slotIndex = phase === 1 ? phaseIndex : phaseIndex + 3;
+                  if (slotIndex < 5) {
+                    redLanes[slotIndex] = pick.lane;
+                    if (pick.player) {
+                      redPlayers[slotIndex] = pick.player;
+                    }
+                  }
+                }
+              });
+            }
+          });
+        }
         
-        console.log('CRITICAL FIX: Populated assignments with shuffled lanes:', {
+        console.log('CRITICAL FIX: Populated assignments from existing data:', {
           blueLanes,
           redLanes,
           bluePlayers,
-          redPlayers,
-          customLaneAssignments: customLaneAssignments
+          redPlayers
         });
         
         // Set both states together to ensure consistency
@@ -642,6 +1018,17 @@ export default function ExportModal({
         setPlayerAssignments({
           blue: bluePlayers,
           red: redPlayers
+        });
+        
+        // Update custom lane assignments to match
+        setCustomLaneAssignments({
+          blue: blueLanes,
+          red: redLanes
+        });
+        
+        console.log('CRITICAL FIX: Set lane assignments from existing data:', {
+          laneAssignments: { blue: blueLanes, red: redLanes },
+          customLaneAssignments: { blue: blueLanes, red: redLanes }
         });
         
         // Hide loading indicator after mapping is complete
@@ -662,6 +1049,22 @@ export default function ExportModal({
       // For new matches, start with empty draft
       setDraftPicks({ blue: [], red: [] });
       setDraftBans({ blue: [], red: [] });
+      
+      // Even for new matches, check if there are existing lane assignments in form data
+      const existingData = extractLaneAssignmentsFromFormData();
+      if (existingData) {
+        console.log('CRITICAL FIX: Loading existing lane assignments and player assignments from form data for new match:', existingData);
+        setLaneAssignments({ blue: existingData.blue, red: existingData.red });
+        setCustomLaneAssignments({ blue: existingData.blue, red: existingData.red });
+        setPlayerAssignments({ blue: existingData.bluePlayers, red: existingData.redPlayers });
+      }
+      
+      // Capture original draft state for new matches
+      setOriginalDraftState({
+        bans: { blue: [], red: [] },
+        picks: { blue: [], red: [] },
+        laneAssignments: existingData ? { blue: existingData.blue, red: existingData.red } : { blue: ['exp', 'jungler', 'mid', 'gold', 'roam'], red: ['exp', 'jungler', 'mid', 'gold', 'roam'] }
+      });
     }
      
      // Ensure the main form state is synchronized with draft state
@@ -678,28 +1081,32 @@ export default function ExportModal({
          
          const updatedPicks = {
            blue: {
-             1: draftPicks.blue.slice(0, 3).filter(hero => hero && hero.name).map((hero, index) => ({
-               hero: hero.name,
-               lane: laneAssignments.blue[index] || hero.lane || null,
-               role: hero.role
-             })),
-             2: draftPicks.blue.slice(3, 5).filter(hero => hero && hero.name).map((hero, index) => ({
-               hero: hero.name,
-               lane: laneAssignments.blue[index + 3] || hero.lane || null,
-               role: hero.role
-             }))
+            1: draftPicks.blue.slice(0, 3).filter(hero => hero && hero.name).map((hero, index) => ({
+              hero: hero.name,
+              lane: laneAssignments.blue[index] || hero.lane || null,
+              role: hero.role,
+              player: playerAssignments.blue?.[index] || null
+            })),
+            2: draftPicks.blue.slice(3, 5).filter(hero => hero && hero.name).map((hero, index) => ({
+              hero: hero.name,
+              lane: laneAssignments.blue[index + 3] || hero.lane || null,
+              role: hero.role,
+              player: playerAssignments.blue?.[index + 3] || null
+            }))
            },
            red: {
-             1: draftPicks.red.slice(0, 3).filter(hero => hero && hero.name).map((hero, index) => ({
-               hero: hero.name,
-               lane: laneAssignments.red[index] || hero.lane || null,
-               role: hero.role
-             })),
-             2: draftPicks.red.slice(3, 5).filter(hero => hero && hero.name).map((hero, index) => ({
-               hero: hero.name,
-               lane: laneAssignments.red[index + 3] || hero.lane || null,
-               role: hero.role
-             }))
+            1: draftPicks.red.slice(0, 3).filter(hero => hero && hero.name).map((hero, index) => ({
+              hero: hero.name,
+              lane: laneAssignments.red[index] || hero.lane || null,
+              role: hero.role,
+              player: playerAssignments.red?.[index] || null
+            })),
+            2: draftPicks.red.slice(3, 5).filter(hero => hero && hero.name).map((hero, index) => ({
+              hero: hero.name,
+              lane: laneAssignments.red[index + 3] || hero.lane || null,
+              role: hero.role,
+              player: playerAssignments.red?.[index + 3] || null
+            }))
            }
          };
          
@@ -879,7 +1286,7 @@ export default function ExportModal({
             player: assignedPlayer
           };
           
-          console.log(`Hero pick: ${hero.name} for ${actualLane} lane, auto-assigned player:`, assignedPlayer);
+          console.log(`✅ Hero pick: ${hero.name} for ${actualLane} lane, auto-assigned player: ${assignedPlayer.name}`);
 
           setDraftPicks(prev => {
             const currentTeamPicks = [...(prev[currentDraftStep.team] || [])];
@@ -912,9 +1319,60 @@ export default function ExportModal({
           });
         } else {
           console.log(`❌ No players found for role ${actualLane}. Available players:`, players);
-          // No players for this role - show error
-          alert(`No players found for ${actualLane} role. Please check your team configuration.`);
-          return;
+          
+          // Try to find any player with a similar role as fallback
+          const fallbackPlayer = players.find(player => 
+            player.role && (
+              player.role.toLowerCase().includes(actualLane.toLowerCase()) ||
+              actualLane.toLowerCase().includes(player.role.toLowerCase())
+            )
+          );
+          
+          if (fallbackPlayer) {
+            console.log(`🔄 Fallback: Found player ${fallbackPlayer.name} with role ${fallbackPlayer.role} for ${actualLane} lane`);
+            
+            const heroWithLane = {
+              ...hero,
+              lane: actualLane,
+              player: fallbackPlayer
+            };
+            
+            console.log(`✅ Hero pick: ${hero.name} for ${actualLane} lane, fallback-assigned player: ${fallbackPlayer.name}`);
+
+            setDraftPicks(prev => {
+              const currentTeamPicks = [...(prev[currentDraftStep.team] || [])];
+              
+              // Ensure the array has enough slots
+              while (currentTeamPicks.length <= targetSlotIndex) {
+                currentTeamPicks.push(null);
+              }
+              
+              // Place the hero in the specific slot that corresponds to the current lane assignment
+              currentTeamPicks[targetSlotIndex] = heroWithLane;
+              
+              console.log(`Placed hero ${hero.name} for ${team} team at slot ${targetSlotIndex} (${actualLane} lane)`);
+              
+              return {
+                ...prev,
+                [currentDraftStep.team]: currentTeamPicks
+              };
+            });
+            
+            // Update player assignments
+            setPlayerAssignments(prev => {
+              const laneIndex = ['exp', 'jungler', 'mid', 'gold', 'roam'].indexOf(actualLane);
+              if (laneIndex !== -1) {
+                const updated = { ...prev };
+                updated[currentDraftStep.team][laneIndex] = fallbackPlayer;
+                return updated;
+              }
+              return prev;
+            });
+          } else {
+            // No players for this role - show error
+            alert(`No players found for ${actualLane} role. Please check your team configuration.`);
+            return;
+          }
         }
       } else {
         console.log(`❌ Team match not found! This is opponent team (${currentDraftStep.team}), no player selection needed`);
@@ -1014,23 +1472,28 @@ export default function ExportModal({
      }
    };
 
-    // Handle draft completion
-  const handleDraftComplete = () => {
-    console.log('Draft completion - Current draft data:', { draftBans, draftPicks, laneAssignments });
+    // Sync draft data to main form state
+  const syncDraftDataToForm = () => {
+    console.log('Syncing draft data to form - Current draft data:', { draftBans, draftPicks, laneAssignments });
     
-    // Update the banning state - extract hero names from hero objects
-    // Distribute bans: 3 in phase 1, 2 in phase 2 for each team
-    const blueBans = draftBans.blue.filter(hero => hero && hero.name).map(hero => hero.name);
-    const redBans = draftBans.red.filter(hero => hero && hero.name).map(hero => hero.name);
+    // Only update banning state if draft data exists, otherwise keep existing banning data
+    let newBanning = {}; // Start with empty object since setBanning merges with previous state
     
-    console.log('Processed bans:', { blueBans, redBans });
-    
-    const newBanning = {
-      blue1: blueBans.slice(0, 3), // First 3 bans for phase 1
-      blue2: blueBans.slice(3, 5), // Last 2 bans for phase 2
-      red1: redBans.slice(0, 3),   // First 3 bans for phase 1
-      red2: redBans.slice(3, 5)    // Last 2 bans for phase 2
-    };
+    if (draftBans.blue.length > 0 || draftBans.red.length > 0) {
+      // Update the banning state - extract hero names from hero objects
+      // Distribute bans: 3 in phase 1, 2 in phase 2 for each team
+      const blueBans = draftBans.blue.filter(hero => hero && hero.name).map(hero => hero.name);
+      const redBans = draftBans.red.filter(hero => hero && hero.name).map(hero => hero.name);
+      
+      console.log('Processed bans:', { blueBans, redBans });
+      
+      newBanning = {
+        blue1: blueBans.slice(0, 3), // First 3 bans for phase 1
+        blue2: blueBans.slice(3, 5), // Last 2 bans for phase 2
+        red1: redBans.slice(0, 3),   // First 3 bans for phase 1
+        red2: redBans.slice(3, 5)    // Last 2 bans for phase 2
+      };
+    }
 
          // Update the picks state - merge hero picks with lane assignments and player data
          // Using lane-anchored approach for consistent player↔hero↔lane mapping
@@ -1083,6 +1546,21 @@ export default function ExportModal({
            return;
          }
 
+    // Determine which team is the current team and only process that team
+    const { currentTeam, teamColor } = getCurrentTeamInfo();
+    
+    if (currentTeam) {
+      // Auto-assign players to lanes if not already assigned (only for current team)
+      console.log(`Auto-assigning players to lanes for ${teamColor} team...`);
+      autoAssignPlayersToLanes(currentTeam);
+      
+      // Auto-assign heroes to players based on their roles (only for current team)
+      console.log(`Auto-assigning heroes to players for ${teamColor} team...`);
+      autoAssignHeroesToPlayers(currentTeam);
+    } else {
+      console.log('⚠️ No current team found, skipping auto-assignment during export');
+    }
+    
     console.log('Processed picks with lanes:', { finalBluePicks, finalRedPicks });
     console.log('Final playerAssignments state:', { 
       blue: playerAssignments.blue, 
@@ -1138,24 +1616,72 @@ export default function ExportModal({
      }, 100);
   };
 
+  // Handle draft completion (Save Changes button)
+  const handleDraftComplete = () => {
+    // Update original state to current state when saving
+    if (isEditing && hasDraftChanges()) {
+      setOriginalDraftState({
+        bans: JSON.parse(JSON.stringify(draftBans)),
+        picks: JSON.parse(JSON.stringify(draftPicks)),
+        laneAssignments: JSON.parse(JSON.stringify(customLaneAssignments))
+      });
+    }
+    syncDraftDataToForm();
+  };
+
+  // Handle closing draft modal with data sync (X button)
+  const handleCloseDraftModal = () => {
+    // If there are changes, reset to original state
+    if (hasDraftChanges()) {
+      resetDraftToOriginal();
+    }
+    syncDraftDataToForm();
+  };
+
   // Handle confirm with draft sync for editing
-  const handleConfirmWithSync = () => {
-    // Use current form state instead of draft state for editing
-    // This ensures we always have the data even if user didn't click "Edit Draft"
-    const finalBanning = {
-      blue1: banning.blue1 || [],
-      blue2: banning.blue2 || [],
-      red1:  banning.red1  || [],
-      red2:  banning.red2  || [],
-    };
+  const handleConfirmWithSync = async () => {
+    // Prevent multiple clicks while exporting
+    if (isExporting) return;
+    
+    console.log('ExportModal - handleConfirmWithSync called');
+    console.log('ExportModal - Current annualMap value:', annualMap);
+    console.log('ExportModal - Current annualMap type:', typeof annualMap);
+    console.log('ExportModal - Current annualMap length:', annualMap ? annualMap.length : 'null/undefined');
+    
+    setIsExporting(true);
+    
+    try {
+      // Use current form state instead of draft state for editing
+      // This ensures we always have the data even if user didn't click "Edit Draft"
+      const finalBanning = {
+        blue1: banning.blue1 || [],
+        blue2: banning.blue2 || [],
+        red1:  banning.red1  || [],
+        red2:  banning.red2  || [],
+      };
 
     // Merge player assignments with picks data to ensure specific players are included
     const mergePlayerAssignments = (teamPicks, teamName) => {
       const merged = { ...teamPicks };
       
+      // Get current team name to determine which team should have player assignments
+      const latestTeam = JSON.parse(localStorage.getItem('latestTeam') || '{}');
+      const currentTeamName = latestTeam?.teamName || latestTeam?.name || '';
+      
+      // Determine if this team is the current team based on team names
+      const isCurrentTeam = (teamName === 'blue' && blueTeam === currentTeamName) || 
+                           (teamName === 'red' && redTeam === currentTeamName);
+      
+      // Use current player assignments
+      const currentPlayerAssignments = playerAssignments[teamName];
+      
       console.log(`Merging player assignments for ${teamName} team:`, {
         teamPicks,
-        playerAssignments: playerAssignments[teamName]
+        playerAssignments: currentPlayerAssignments || playerAssignments[teamName],
+        isCurrentTeam,
+        currentTeamName,
+        blueTeam,
+        redTeam
       });
       
       // For each phase (1 and 2)
@@ -1163,8 +1689,8 @@ export default function ExportModal({
         if (merged[phase] && Array.isArray(merged[phase])) {
           merged[phase] = merged[phase].map(pick => {
             if (pick && pick.lane) {
-              if (teamName === 'blue') {
-                // For your team (blue), prioritize the player data already stored in the pick
+              if (isCurrentTeam) {
+                // For current team, prioritize the player data already stored in the pick
                 if (pick.player && (pick.player.name || (typeof pick.player === 'string' && pick.player))) {
                   // Pick already has player data - use it (this is the correct approach)
                   console.log(`Pick already has player data:`, pick.player);
@@ -1173,23 +1699,30 @@ export default function ExportModal({
                 
                 // Only fall back to playerAssignments if the pick doesn't have player data
                 const laneIndex = ['exp', 'jungler', 'mid', 'gold', 'roam'].indexOf(pick.lane);
+                const assignedPlayer = currentPlayerAssignments?.[laneIndex] || playerAssignments[teamName]?.[laneIndex];
+                
                 console.log(`Processing ${teamName} pick for ${pick.lane} lane (index: ${laneIndex}):`, {
                   pick,
-                  assignedPlayer: playerAssignments[teamName]?.[laneIndex]
+                  assignedPlayer: assignedPlayer
                 });
                 
-                if (laneIndex !== -1 && playerAssignments[teamName] && playerAssignments[teamName][laneIndex]) {
+                if (laneIndex !== -1 && assignedPlayer) {
                   const result = {
                     ...pick,
-                    player: playerAssignments[teamName][laneIndex]
+                    player: assignedPlayer
                   };
                   console.log(`Updated pick with player assignment from state:`, result);
                   return result;
                 } else {
-                  console.warn(`No player assigned to ${pick.lane} lane for ${teamName} team`);
+                  // Only show warning when not editing or when it's a new match
+                  if (!isEditing) {
+                    console.warn(`No player assigned to ${pick.lane} lane for ${teamName} team`);
+                  } else {
+                    console.log(`Editing mode: Skipping player assignment validation for ${pick.lane} lane`);
+                  }
                 }
               } else {
-                // For opponent team (red), add placeholder player data
+                // For opponent team, add placeholder player data
                 if (!pick.player) {
                   return {
                     ...pick,
@@ -1265,13 +1798,26 @@ export default function ExportModal({
 
     // Debug: Log the final data being sent
     console.log('ExportModal - Final data being sent to parent:', {
-      banning: finalBanning,
-      picks: finalPicks,
+      draftBans: draftBans,
+      draftPicks: draftPicks,
+      laneAssignments: laneAssignments,
+      playerAssignments: playerAssignments,
       isEditing
     });
     
-    // Call parent with computed payload (do NOT rely on setState finishing)
-    onConfirm({ banning: finalBanning, picks: finalPicks });
+      // Call parent with computed payload in comprehensive format
+      onConfirm({ 
+        draftBans: draftBans,
+        draftPicks: draftPicks,
+        laneAssignments: laneAssignments,
+        playerAssignments: playerAssignments
+      });
+    } catch (error) {
+      console.error('Error during export:', error);
+      // You could add a toast notification here if needed
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // Check if current slot is active
@@ -1481,7 +2027,7 @@ export default function ExportModal({
           // Restore hero while preserving existing lane and player
           const restoredPick = {
             ...existingPick,
-            hero: hero.name || hero,
+            hero: hero, // Store the full hero object
             name: hero.name || hero
           };
           
@@ -1497,7 +2043,7 @@ export default function ExportModal({
         } else {
           // Create new pick if none exists
           const newPick = {
-            hero: hero.name || hero,
+            hero: hero, // Store the full hero object
             name: hero.name || hero,
             lane: null,
             player: null
@@ -1809,6 +2355,177 @@ export default function ExportModal({
     setSelectedDraftSlot({ type: slotType, team: slotTeam, index: slotIndex });
   };
 
+  // Function to check if update-hero endpoint is available
+  const checkUpdateHeroEndpoint = async () => {
+    try {
+      // Test both GET and PUT methods
+      const getTestUrl = `${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/test-update-hero`;
+      const putTestUrl = `${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/test-update-hero-put`;
+      
+      const getResponse = await fetch(getTestUrl, { method: 'GET' });
+      const putResponse = await fetch(putTestUrl, { method: 'PUT' });
+      
+      console.log('GET test response:', getResponse.status);
+      console.log('PUT test response:', putResponse.status);
+      
+      return getResponse.ok && putResponse.ok;
+    } catch (error) {
+      console.log('Endpoint test error:', error);
+      return false;
+    }
+  };
+
+  // Function to update hero assignment in the database
+  const updateHeroAssignmentInDatabase = async (matchId, playerId, role, oldHeroName, newHeroName, assignmentId = null) => {
+    try {
+      const latestTeam = JSON.parse(localStorage.getItem('latestTeam') || '{}');
+      const teamId = latestTeam.id;
+      
+      if (!teamId) {
+        console.error('No team ID found for hero assignment update');
+        return;
+      }
+
+      console.log('Updating hero assignment:', {
+        matchId,
+        playerId,
+        role,
+        oldHeroName,
+        newHeroName,
+        assignmentId,
+        teamId
+      });
+
+      // Try assignment_id route first if we have the ID
+      if (assignmentId) {
+        console.log('Trying assignment_id route first...');
+        const assignmentUrl = `${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/match-player-assignments/${assignmentId}/hero`;
+        
+        try {
+          const assignmentResponse = await fetch(assignmentUrl, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              new_hero_name: newHeroName
+            })
+          });
+          
+          const body = await assignmentResponse.text();
+          console.log('Assignment ID response status:', assignmentResponse.status, 'body:', body);
+
+          if (assignmentResponse.ok) {
+            const result = JSON.parse(body);
+            console.log('Hero assignment updated via assignment ID:', result);
+            return;
+          } else {
+            console.warn('Assignment ID route failed, trying composite key route...');
+          }
+        } catch (assignmentError) {
+          console.warn('Assignment ID request failed, trying composite key route:', assignmentError.message);
+        }
+      }
+
+      // Check if update-hero endpoint is available
+      const isUpdateHeroAvailable = await checkUpdateHeroEndpoint();
+      console.log('Update-hero endpoint available:', isUpdateHeroAvailable);
+
+      // Try composite key update-hero endpoint
+      if (isUpdateHeroAvailable) {
+        const apiUrl = `${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/match-player-assignments/update-hero`;
+        console.log('Making update-hero request to:', apiUrl);
+        console.log('Request payload:', {
+          match_id: matchId,
+          team_id: teamId,
+          player_id: playerId,
+          role: role,
+          old_hero_name: oldHeroName,
+          new_hero_name: newHeroName
+        });
+        
+        try {
+          const updateResponse = await fetch(apiUrl, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              match_id: matchId,
+              team_id: teamId,
+              player_id: playerId,
+              role: role,
+              old_hero_name: oldHeroName,
+              new_hero_name: newHeroName
+            })
+          });
+          
+          const body = await updateResponse.text();
+          console.log('Update response status:', updateResponse.status, 'body:', body);
+          console.log('Update response URL:', updateResponse.url);
+
+          if (updateResponse.ok) {
+            const result = JSON.parse(body);
+            console.log('Hero assignment updated in database:', result);
+            return;
+          }
+
+          // If update failed (404 - assignment not found), fall through to assign endpoint
+          if (updateResponse.status === 404) {
+            console.log('Assignment not found, will use assign endpoint...');
+          } else {
+            console.warn('Update-hero failed with status:', updateResponse.status);
+          }
+        } catch (updateError) {
+          console.warn('Update-hero request failed, using assign endpoint:', updateError.message);
+        }
+      } else {
+        console.log('Update-hero endpoint not available, using assign endpoint directly...');
+      }
+      
+      // Fallback: Always use assign endpoint to ensure hero changes are saved
+      console.log('Using assign endpoint to update hero assignment...');
+      
+      // Validate that we have a valid player_id before making the request
+      if (!playerId) {
+        console.error('No valid player_id found for hero assignment update, skipping assign endpoint');
+        return;
+      }
+      
+      const createResponse = await fetch(`${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/match-player-assignments/assign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          match_id: matchId,
+          team_id: teamId,
+          assignments: [{
+            player_id: playerId,
+            role: role,
+            hero_name: newHeroName,
+            is_starting_lineup: true,
+            substitute_order: null,
+            notes: null
+          }]
+        })
+      });
+
+      const assignBody = await createResponse.text();
+      console.log('Assign response status:', createResponse.status, 'body:', assignBody);
+
+      if (createResponse.ok) {
+        const result = JSON.parse(assignBody);
+        console.log('Hero assignment updated via assign endpoint:', result);
+      } else {
+        const errorResult = JSON.parse(assignBody);
+        console.error('Failed to update hero assignment via assign endpoint:', errorResult.message || errorResult.error);
+      }
+    } catch (error) {
+      console.error('Error updating hero assignment:', error);
+    }
+  };
+
   // IMPROVED: Handle hero selection for draft slot editing - preserves existing data
   const handleDraftSlotEdit = (hero) => {
     if (!selectedDraftSlot) return;
@@ -1859,7 +2576,7 @@ export default function ExportModal({
             // Lane and player are already assigned - just update the hero
             const updatedPick = {
               ...existingPick,
-              hero: hero.name || hero, // Store hero name for backend compatibility
+              hero: hero, // Store the full hero object
               name: hero.name || hero // Ensure backward compatibility
             };
             
@@ -1871,6 +2588,21 @@ export default function ExportModal({
             });
             
             newPicks[index] = updatedPick;
+            
+            // Update hero assignment in database if this is an existing match
+            if (isEditing && editingMatchId && existingPlayer.id) {
+              const oldHeroName = existingPick.hero?.name || existingPick.name || existingPick.hero;
+              const newHeroName = hero.name || hero;
+              
+              updateHeroAssignmentInDatabase(
+                editingMatchId,
+                existingPlayer.id,
+                lane,
+                oldHeroName,
+                newHeroName,
+                null // assignment_id not available yet
+              );
+            }
             
             // Force immediate update by creating a new object reference
             const updatedState = { ...prev, [team]: newPicks };
@@ -1916,7 +2648,7 @@ export default function ExportModal({
                 const assignedPlayer = playersForRole[0];
                 const updatedPick = {
                   ...existingPick,
-                  hero: hero.name || hero, // Store hero name for backend compatibility
+                  hero: hero, // Store the full hero object
                   name: hero.name || hero,
                   player: assignedPlayer
                 };
@@ -1924,6 +2656,22 @@ export default function ExportModal({
                 console.log(`Auto-assigned player ${assignedPlayer.name} to edited hero ${hero.name}`);
                 
                 newPicks[index] = updatedPick;
+                
+                // Update hero assignment in database if this is an existing match
+                if (isEditing && editingMatchId && assignedPlayer.id) {
+                  const oldHeroName = existingPick.hero?.name || existingPick.name || existingPick.hero;
+                  const newHeroName = hero.name || hero;
+                  
+                  updateHeroAssignmentInDatabase(
+                    editingMatchId,
+                    assignedPlayer.id,
+                    lane,
+                    oldHeroName,
+                    newHeroName,
+                    null // assignment_id not available yet
+                  );
+                }
+                
                 // Force immediate update by creating a new object reference
                 const updatedState = { ...prev, [team]: newPicks };
                 console.log(`Auto-assigned player and updated draft picks state:`, updatedState);
@@ -1934,7 +2682,7 @@ export default function ExportModal({
             // Fallback - just update the hero without player
             const updatedPick = {
               ...existingPick,
-              hero: hero.name || hero, // Store hero name for backend compatibility
+              hero: hero, // Store the full hero object
               name: hero.name || hero
             };
             
@@ -1947,7 +2695,7 @@ export default function ExportModal({
             // No lane assigned - just update the hero
             const updatedPick = {
               ...existingPick,
-              hero: hero.name || hero, // Store hero name for backend compatibility
+              hero: hero, // Store the full hero object
               name: hero.name || hero
             };
             
@@ -1961,7 +2709,7 @@ export default function ExportModal({
           // If no existing pick, create a new one
           console.log(`Creating new pick at index ${index} for ${team} team`);
           newPicks[index] = {
-            hero: hero.name || hero, // Store hero name for backend compatibility
+            hero: hero, // Store the full hero object
             name: hero.name || hero,
             lane: null, // Will need lane assignment
             player: null // Will need player assignment
@@ -2000,38 +2748,29 @@ export default function ExportModal({
     
     console.log(`Starting LANE-ONLY swap for ${team} team: slot ${sourceSlotIndex} <-> slot ${targetSlotIndex}`);
     
-    // Update lane assignments ONLY - keep heroes in their original positions
-    setLaneAssignments(prev => {
-      const newAssignments = { ...prev };
-      const teamLanes = [...newAssignments[team]];
-      
-      // Swap the lanes
-      const temp = teamLanes[sourceSlotIndex];
-      teamLanes[sourceSlotIndex] = teamLanes[targetSlotIndex];
-      teamLanes[targetSlotIndex] = temp;
-      
-      newAssignments[team] = teamLanes;
-      
-      console.log(`Swapped LANES ONLY between slots ${sourceSlotIndex} and ${targetSlotIndex} for ${team} team:`, {
-        sourceLane: temp,
-        targetLane: teamLanes[sourceSlotIndex]
-      });
-      
-      return newAssignments;
-    });
-
-    // CRITICAL FIX: Also update draftPicks with the new lane assignments
-    // We need to calculate the new lane assignments here since setLaneAssignments is async
+    // Calculate the new lane assignments
     const currentLaneAssignments = laneAssignments;
     const newLaneAssignments = { ...currentLaneAssignments };
     const teamLanes = [...newLaneAssignments[team]];
     
-    // Swap the lanes (same logic as above)
+    // Swap the lanes
     const temp = teamLanes[sourceSlotIndex];
     teamLanes[sourceSlotIndex] = teamLanes[targetSlotIndex];
     teamLanes[targetSlotIndex] = temp;
     newLaneAssignments[team] = teamLanes;
     
+    console.log(`Swapped LANES ONLY between slots ${sourceSlotIndex} and ${targetSlotIndex} for ${team} team:`, {
+      sourceLane: temp,
+      targetLane: teamLanes[sourceSlotIndex]
+    });
+    
+    // Update lane assignments state
+    setLaneAssignments(newLaneAssignments);
+    
+    // Update custom lane assignments for the draft board
+    setCustomLaneAssignments(newLaneAssignments);
+    
+    // Update draftPicks to reflect the new lane assignments
     setDraftPicks(prev => {
       const newDraftPicks = { ...prev };
       const teamPicks = [...newDraftPicks[team]];
@@ -2052,60 +2791,7 @@ export default function ExportModal({
       
       return newDraftPicks;
     });
-
-    // CRITICAL FIX: Also update the main picks state to ensure consistency
-    setPicks(prev => {
-      const newPicks = { ...prev };
-      
-      // Update blue team picks
-      if (team === 'blue') {
-        const bluePicks1 = [...(newPicks.blue[1] || [])];
-        const bluePicks2 = [...(newPicks.blue[2] || [])];
-        const allBluePicks = [...bluePicks1, ...bluePicks2];
-        
-        // Update lane assignments for all blue picks
-        allBluePicks.forEach((pick, index) => {
-          if (pick && pick.hero) {
-            const newLane = newLaneAssignments.blue[index];
-            allBluePicks[index] = {
-              ...pick,
-              lane: newLane
-            };
-          }
-        });
-        
-        // Split back into phase 1 and phase 2
-        newPicks.blue[1] = allBluePicks.slice(0, 3);
-        newPicks.blue[2] = allBluePicks.slice(3, 5);
-      }
-      
-      // Update red team picks
-      if (team === 'red') {
-        const redPicks1 = [...(newPicks.red[1] || [])];
-        const redPicks2 = [...(newPicks.red[2] || [])];
-        const allRedPicks = [...redPicks1, ...redPicks2];
-        
-        // Update lane assignments for all red picks
-        allRedPicks.forEach((pick, index) => {
-          if (pick && pick.hero) {
-            const newLane = newLaneAssignments.red[index];
-            allRedPicks[index] = {
-              ...pick,
-              lane: newLane
-            };
-          }
-        });
-        
-        // Split back into phase 1 and phase 2
-        newPicks.red[1] = allRedPicks.slice(0, 3);
-        newPicks.red[2] = allRedPicks.slice(3, 5);
-      }
-      
-      console.log(`Updated main picks state with new lane assignments for ${team} team:`, newPicks);
-      
-      return newPicks;
-    });
-
+    
     // DO NOT swap heroes - they should stay in their original positions
     // The lane assignment change will automatically update the role for each hero
     console.log(`Heroes remain in their original positions, only lane roles are swapped`);
@@ -2159,7 +2845,7 @@ export default function ExportModal({
             // Update the existing pick with the new hero and selected player
             const updatedPick = {
               ...existingPick,
-              hero: hero.name || hero,
+              hero: hero, // Store the full hero object
               name: hero.name || hero,
               player: selectedPlayer
             };
@@ -2171,6 +2857,22 @@ export default function ExportModal({
             
             const newPicks = [...currentTeamPicks];
             newPicks[editIndex] = updatedPick;
+            
+            // Update hero assignment in database if this is an existing match
+            if (isEditing && editingMatchId && selectedPlayer.id) {
+              const oldHeroName = existingPick.hero?.name || existingPick.name || existingPick.hero;
+              const newHeroName = hero.name || hero;
+              
+              updateHeroAssignmentInDatabase(
+                editingMatchId,
+                selectedPlayer.id,
+                lane,
+                oldHeroName,
+                newHeroName,
+                null // assignment_id not available yet
+              );
+            }
+            
             return { ...prev, [team]: newPicks };
           }
           
@@ -2304,33 +3006,53 @@ export default function ExportModal({
        errors.push('Red team picks structure is invalid');
      }
      
-     // Validate that picks have both hero and lane
-     const validatePicks = (teamPicks, teamName) => {
-       if (Array.isArray(teamPicks[1])) {
-         teamPicks[1].forEach((pick, index) => {
-           if (!pick || !pick.hero || !pick.lane) {
-             errors.push(`${teamName} team phase 1 pick ${index + 1} is missing hero or lane`);
-           }
-           // For opponent teams, player assignment is optional
-           // For your team (CG), player assignment is required
-           if (teamName === 'Blue' && !pick.player) {
-             errors.push(`${teamName} team phase 1 pick ${index + 1} (${pick.lane}) is missing player assignment`);
-           }
-         });
-       }
-       if (Array.isArray(teamPicks[2])) {
-         teamPicks[2].forEach((pick, index) => {
-           if (!pick || !pick.hero || !pick.lane) {
-             errors.push(`${teamName} team phase 2 pick ${index + 1} is missing hero or lane`);
-           }
-           // For opponent teams, player assignment is optional
-           // For your team (CG), player assignment is required
-           if (teamName === 'Blue' && !pick.player) {
-             errors.push(`${teamName} team phase 2 pick ${index + 1} (${pick.lane}) is missing player assignment`);
-           }
-         });
-       }
-     };
+    // Validate that picks have both hero and lane
+    const validatePicks = (teamPicks, teamName) => {
+      if (Array.isArray(teamPicks[1])) {
+        teamPicks[1].forEach((pick, index) => {
+          // When editing, be more lenient with validation
+          if (isEditing) {
+            // For editing mode, only validate if pick exists and has some content
+            if (pick && (pick.hero || pick.lane || pick.player)) {
+              // Pick has some data, that's sufficient for editing
+              return;
+            }
+          } else {
+            // For new matches, require both hero and lane
+            if (!pick || !pick.hero || !pick.lane) {
+              errors.push(`${teamName} team phase 1 pick ${index + 1} is missing hero or lane`);
+            }
+          }
+          
+          // Skip player assignment validation when editing existing matches
+          if (!isEditing && teamName === 'Blue' && !pick.player) {
+            errors.push(`${teamName} team phase 1 pick ${index + 1} (${pick.lane}) is missing player assignment`);
+          }
+        });
+      }
+      if (Array.isArray(teamPicks[2])) {
+        teamPicks[2].forEach((pick, index) => {
+          // When editing, be more lenient with validation
+          if (isEditing) {
+            // For editing mode, only validate if pick exists and has some content
+            if (pick && (pick.hero || pick.lane || pick.player)) {
+              // Pick has some data, that's sufficient for editing
+              return;
+            }
+          } else {
+            // For new matches, require both hero and lane
+            if (!pick || !pick.hero || !pick.lane) {
+              errors.push(`${teamName} team phase 2 pick ${index + 1} is missing hero or lane`);
+            }
+          }
+          
+          // Skip player assignment validation when editing existing matches
+          if (!isEditing && teamName === 'Blue' && !pick.player) {
+            errors.push(`${teamName} team phase 2 pick ${index + 1} (${pick.lane}) is missing player assignment`);
+          }
+        });
+      }
+    };
      
      validatePicks(picksData.blue, 'Blue');
      validatePicks(picksData.red, 'Red');
@@ -2407,8 +3129,9 @@ export default function ExportModal({
                              <button
                  type="button"
                  onClick={handleComprehensiveDraft}
-                 disabled={!blueTeam || !redTeam || !winner}
+                 disabled={isDraftButtonDisabled()}
                  className="flex items-center gap-3 px-6 py-3 bg-white text-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
+                 title={isDraftButtonDisabled() ? `Requirements: One team name must match "${actualCurrentTeamName}" (case-sensitive), and all required fields must be filled` : ''}
                >
                  <FaPlay className="w-5 h-5" />
                  {isEditing ? 'Edit Draft' : 'Enter Complete Draft'}
@@ -2494,42 +3217,130 @@ export default function ExportModal({
                   />
                 </div>
               </div>
-              {/* Banning Phase 1 */}
-              <button
-                type="button"
-                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                onClick={() => onBanClick('blue1')}
-              >
-                {banning.blue1.length === 0 ? 'Choose a hero to ban' : banning.blue1.join(', ')}
-              </button>
-              {/* Pick 1 */}
-              <button
-                type="button"
-                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                onClick={() => onPickClick('blue', 1)}
-              >
-                {Array.isArray(picks.blue[1]) && picks.blue[1].length > 0
-                  ? picks.blue[1].filter(p => p && p.lane && p.hero).map(p => p.hero).join(', ')
-                  : 'Choose a hero to pick'}
-              </button>
-              {/* Banning Phase 2 */}
-              <button
-                type="button"
-                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                onClick={() => onBanClick('blue2')}
-              >
-                {banning.blue2.length === 0 ? 'Choose a hero to ban' : banning.blue2.join(', ')}
-              </button>
-              {/* Pick 2 */}
-              <button
-                type="button"
-                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                onClick={() => onPickClick('blue', 2)}
-              >
-                {Array.isArray(picks.blue[2]) && picks.blue[2].length > 0
-                  ? picks.blue[2].filter(p => p && p.lane && p.hero).map(p => p.hero).join(', ')
-                  : 'Choose a hero to pick'}
-              </button>
+              {/* Banning Phase 1 - Visual Only */}
+              <div className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent">
+                {getBanHeroNames(banning.blue1).length === 0 ? (
+                  <div className="text-gray-400 text-center">No bans</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {getBanHeroNames(banning.blue1).map(heroName => {
+                      const hero = heroList.find(h => h.name === heroName);
+                      return hero ? (
+                        <div key={heroName} className="relative group">
+                          <img
+                            src={`https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
+                            alt={heroName}
+                            className="w-8 h-8 rounded-full border-2 border-red-500 grayscale"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                            }}
+                          />
+                          <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            {heroName}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={heroName} className="w-8 h-8 rounded-full border-2 border-red-500 bg-gray-600 flex items-center justify-center text-xs">
+                          ?
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {/* Pick 1 - Visual Only */}
+              <div className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent">
+                {Array.isArray(picks.blue[1]) && picks.blue[1].length > 0 ? (
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {picks.blue[1].filter(p => p && p.lane && p.hero).map(pick => {
+                      const hero = heroList.find(h => h.name === pick.hero);
+                      return hero ? (
+                        <div key={pick.hero} className="relative group">
+                          <img
+                            src={`https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
+                            alt={pick.hero}
+                            className="w-8 h-8 rounded-full border-2 border-green-500"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                            }}
+                          />
+                          <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            {pick.hero}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={pick.hero} className="w-8 h-8 rounded-full border-2 border-green-500 bg-gray-600 flex items-center justify-center text-xs">
+                          ?
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-gray-400 text-center">No picks</div>
+                )}
+              </div>
+              {/* Banning Phase 2 - Visual Only */}
+              <div className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent">
+                {getBanHeroNames(banning.blue2).length === 0 ? (
+                  <div className="text-gray-400 text-center">No bans</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {getBanHeroNames(banning.blue2).map(heroName => {
+                      const hero = heroList.find(h => h.name === heroName);
+                      return hero ? (
+                        <div key={heroName} className="relative group">
+                          <img
+                            src={`https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
+                            alt={heroName}
+                            className="w-8 h-8 rounded-full border-2 border-red-500 grayscale"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                            }}
+                          />
+                          <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            {heroName}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={heroName} className="w-8 h-8 rounded-full border-2 border-red-500 bg-gray-600 flex items-center justify-center text-xs">
+                          ?
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {/* Pick 2 - Visual Only */}
+              <div className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent">
+                {Array.isArray(picks.blue[2]) && picks.blue[2].length > 0 ? (
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {picks.blue[2].filter(p => p && p.lane && p.hero).map(pick => {
+                      const hero = heroList.find(h => h.name === pick.hero);
+                      return hero ? (
+                        <div key={pick.hero} className="relative group">
+                          <img
+                            src={`https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
+                            alt={pick.hero}
+                            className="w-8 h-8 rounded-full border-2 border-green-500"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                            }}
+                          />
+                          <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            {pick.hero}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={pick.hero} className="w-8 h-8 rounded-full border-2 border-green-500 bg-gray-600 flex items-center justify-center text-xs">
+                          ?
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-gray-400 text-center">No picks</div>
+                )}
+              </div>
             </div>
             {/* Row 2: Red Team */}
             <div className="grid grid-cols-7 gap-6 items-center mb-2">
@@ -2551,42 +3362,130 @@ export default function ExportModal({
                   />
                 </div>
               </div>
-              {/* Banning Phase 1 */}
-              <button
-                type="button"
-                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-red-400"
-                onClick={() => onBanClick('red1')}
-              >
-                {banning.red1.length === 0 ? 'Choose a hero to ban' : banning.red1.join(', ')}
-              </button>
-              {/* Pick 1 */}
-              <button
-                type="button"
-                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-red-400"
-                onClick={() => onPickClick('red', 1)}
-              >
-                {Array.isArray(picks.red[1]) && picks.red[1].length > 0
-                  ? picks.red[1].filter(p => p && p.lane && p.hero).map(p => p.hero).join(', ')
-                  : 'Choose a hero to pick'}
-              </button>
-              {/* Banning Phase 2 */}
-              <button
-                type="button"
-                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-red-400"
-                onClick={() => onBanClick('red2')}
-              >
-                {banning.red2.length === 0 ? 'Choose a hero to ban' : banning.red2.join(', ')}
-              </button>
-              {/* Pick 2 */}
-              <button
-                type="button"
-                className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent hover:bg-white/10 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-red-400"
-                onClick={() => onPickClick('red', 2)}
-              >
-                {Array.isArray(picks.red[2]) && picks.red[2].length > 0
-                  ? picks.red[2].filter(p => p && p.lane && p.hero).map(p => p.hero).join(', ')
-                  : 'Choose a hero to pick'}
-              </button>
+              {/* Banning Phase 1 - Visual Only */}
+              <div className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent">
+                {getBanHeroNames(banning.red1).length === 0 ? (
+                  <div className="text-gray-400 text-center">No bans</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {getBanHeroNames(banning.red1).map(heroName => {
+                      const hero = heroList.find(h => h.name === heroName);
+                      return hero ? (
+                        <div key={heroName} className="relative group">
+                          <img
+                            src={`https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
+                            alt={heroName}
+                            className="w-8 h-8 rounded-full border-2 border-red-500 grayscale"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                            }}
+                          />
+                          <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            {heroName}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={heroName} className="w-8 h-8 rounded-full border-2 border-red-500 bg-gray-600 flex items-center justify-center text-xs">
+                          ?
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {/* Pick 1 - Visual Only */}
+              <div className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent">
+                {Array.isArray(picks.red[1]) && picks.red[1].length > 0 ? (
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {picks.red[1].filter(p => p && p.lane && p.hero).map(pick => {
+                      const hero = heroList.find(h => h.name === pick.hero);
+                      return hero ? (
+                        <div key={pick.hero} className="relative group">
+                          <img
+                            src={`https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
+                            alt={pick.hero}
+                            className="w-8 h-8 rounded-full border-2 border-green-500"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                            }}
+                          />
+                          <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            {pick.hero}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={pick.hero} className="w-8 h-8 rounded-full border-2 border-green-500 bg-gray-600 flex items-center justify-center text-xs">
+                          ?
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-gray-400 text-center">No picks</div>
+                )}
+              </div>
+              {/* Banning Phase 2 - Visual Only */}
+              <div className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent">
+                {getBanHeroNames(banning.red2).length === 0 ? (
+                  <div className="text-gray-400 text-center">No bans</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {getBanHeroNames(banning.red2).map(heroName => {
+                      const hero = heroList.find(h => h.name === heroName);
+                      return hero ? (
+                        <div key={heroName} className="relative group">
+                          <img
+                            src={`https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
+                            alt={heroName}
+                            className="w-8 h-8 rounded-full border-2 border-red-500 grayscale"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                            }}
+                          />
+                          <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            {heroName}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={heroName} className="w-8 h-8 rounded-full border-2 border-red-500 bg-gray-600 flex items-center justify-center text-xs">
+                          ?
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {/* Pick 2 - Visual Only */}
+              <div className="w-full px-4 py-2 rounded-lg border border-current text-white font-semibold bg-transparent">
+                {Array.isArray(picks.red[2]) && picks.red[2].length > 0 ? (
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {picks.red[2].filter(p => p && p.lane && p.hero).map(pick => {
+                      const hero = heroList.find(h => h.name === pick.hero);
+                      return hero ? (
+                        <div key={pick.hero} className="relative group">
+                          <img
+                            src={`https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}`}
+                            alt={pick.hero}
+                            className="w-8 h-8 rounded-full border-2 border-green-500"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                            }}
+                          />
+                          <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            {pick.hero}
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={pick.hero} className="w-8 h-8 rounded-full border-2 border-green-500 bg-gray-600 flex items-center justify-center text-xs">
+                          ?
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-gray-400 text-center">No picks</div>
+                )}
+              </div>
             </div>
             {/* Additional Fields */}
             <div className="grid grid-cols-2 gap-6">
@@ -2666,6 +3565,26 @@ export default function ExportModal({
                   </div>
                 </div>
               </div>
+              {/* Annual Map */}
+              <div className="space-y-2">
+                <label className="text-white text-sm font-semibold">Annual Map</label>
+                <select
+                  value={annualMap}
+                  onChange={(e) => {
+                    console.log('ExportModal - Annual map dropdown changed:', e.target.value);
+                    console.log('ExportModal - Current annualMap state:', annualMap);
+                    setAnnualMap(e.target.value);
+                    console.log('ExportModal - Annual map state after setAnnualMap:', e.target.value);
+                  }}
+                  className="w-full px-3 py-2 bg-[#181A20] text-white rounded focus:outline-none focus:ring-2 focus:ring-green-400"
+                >
+                  <option value="">Select Annual Map</option>
+                  <option value="Dangerous Grass">Dangerous Grass</option>
+                  <option value="Broken Walls">Broken Walls</option>
+                  <option value="Flying Cloud">Flying Cloud</option>
+                  <option value="Expanding River">Expanding River</option>
+                </select>
+              </div>
             </div>
             {/* Notes and Playstyle */}
             <div className="grid grid-cols-2 gap-6">
@@ -2725,13 +3644,17 @@ export default function ExportModal({
               <button
                 type="button"
                 onClick={handleConfirmWithSync}
-                disabled={isExportDisabled()}
+                disabled={isExportDisabled() || isExporting}
                 className={`px-6 py-2 rounded-lg transition-colors ${
-                  isExportDisabled() 
+                  isExportDisabled() || isExporting
                     ? 'bg-gray-500 text-gray-300 cursor-not-allowed' 
                     : 'bg-blue-600 text-white hover:bg-blue-700'
                 }`}
-                title={isExportDisabled() ? `Requirements: One team name must match "${actualCurrentTeamName}" (case-sensitive), Results must be valid, Turtle/Lord taken must have values, and Complete Draft must be finished` : ''}
+                title={isExportDisabled() ? 
+                  (isEditing ? 
+                    `Requirements: Changes must be made, One team name must match "${actualCurrentTeamName}" (case-sensitive), Results must be valid, Turtle/Lord taken must have values, and Complete Draft must be finished` :
+                    `Requirements: One team name must match "${actualCurrentTeamName}" (case-sensitive), Results must be valid, Turtle/Lord taken must have values, and Complete Draft must be finished`
+                  ) : ''}
               >
                 {isEditing ? 'Update Match' : 'Export Match'}
               </button>
@@ -2739,6 +3662,24 @@ export default function ExportModal({
           </form>
         </div>
       </div>
+
+      {/* Loading Overlay */}
+      {isExporting && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-[#181A20] rounded-lg p-8 flex flex-col items-center gap-4">
+            <svg className="animate-spin h-12 w-12 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <div className="text-white text-lg font-semibold">
+              {isEditing ? 'Updating Match...' : 'Exporting Match...'}
+            </div>
+            <div className="text-gray-400 text-sm">
+              Please wait while we process your match data
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mock Draft Modal */}
       {showDraft && (
@@ -2763,7 +3704,12 @@ export default function ExportModal({
                    {draftFinished && (
                      <div className="flex items-center px-4 py-2 bg-green-600/20 border border-green-500/30 rounded-lg">
                        <span className="text-green-400 text-sm font-medium">
-                         ✅ Draft Complete - Heroes are no longer selectable
+                         ✅ Draft Complete - Click on heroes to edit them
+                         {isEditing && hasDraftChanges() && (
+                           <span className="ml-2 text-yellow-400">
+                             • Unsaved changes
+                           </span>
+                         )}
                        </span>
                      </div>
                    )}
@@ -2779,13 +3725,13 @@ export default function ExportModal({
                   )}
                   <button
                     onClick={handleDraftComplete}
-                    disabled={!draftFinished}
+                    disabled={!draftFinished || (isEditing && !hasDraftChanges())}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-green-700 transition-colors"
                   >
                     {isEditing ? 'Save Changes' : 'Complete Draft'}
                   </button>
                   <button 
-                    onClick={() => setShowDraft(false)}
+                    onClick={handleCloseDraftModal}
                     className="text-gray-400 hover:text-white transition-colors"
                   >
                     <FaTimes className="w-6 h-6" />
@@ -2816,6 +3762,7 @@ export default function ExportModal({
                   handleDraftSlotClick={handleDraftSlotClick}
                   handleDraftSlotEdit={handleDraftSlotEdit}
                   isCompleteDraft={true}
+                  isEditing={isEditing}
                   customLaneAssignments={customLaneAssignments}
                   onLaneReassign={handleLaneAssignment}
                   onLaneSwap={handleLaneSwap}
@@ -2850,8 +3797,16 @@ export default function ExportModal({
                   type="text"
                   placeholder="Search heroes..."
                   value={draftSlotSearch}
-                  onChange={(e) => setDraftSlotSearch(e.target.value)}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    const value = e.target.value;
+                    console.log('ExportModal - Search input changed:', value);
+                    setDraftSlotSearch(value);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  onFocus={(e) => e.stopPropagation()}
                   className="w-full px-3 py-2 pl-10 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoComplete="off"
                 />
                 <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -2861,11 +3816,21 @@ export default function ExportModal({
             
             {/* Filtered Hero Grid */}
             <div className="grid grid-cols-8 gap-2 mb-6 max-h-[60vh] overflow-y-auto">
-              {heroList
-                .filter(hero => {
+              {(() => {
+                // Remove duplicates from heroList first
+                const uniqueHeroes = Array.from(new Map(heroList.map(hero => [hero.name, hero])).values());
+                
+                const filteredHeroes = uniqueHeroes.filter(hero => {
                   // Filter by search term
-                  if (draftSlotSearch && !hero.name.toLowerCase().includes(draftSlotSearch.toLowerCase())) {
-                    return false;
+                  if (draftSlotSearch && draftSlotSearch.trim()) {
+                    const searchLower = draftSlotSearch.toLowerCase().trim();
+                    console.log('ExportModal - Searching for:', searchLower);
+                    const heroName = hero.name.toLowerCase();
+                    const matches = heroName.includes(searchLower);
+                    console.log(`ExportModal - Hero: ${hero.name}, matches: ${matches}`);
+                    if (!matches) {
+                      return false;
+                    }
                   }
                   
                   // Filter out already banned/picked heroes
@@ -2875,14 +3840,44 @@ export default function ExportModal({
                   }
                   
                   return true;
-                })
-                .map(hero => (
-                  <button
-                    key={hero.name}
-                    type="button"
-                    className="flex flex-col items-center justify-center p-3 rounded-lg border-2 border-transparent hover:border-blue-400 hover:bg-blue-900/20 text-white transition-all"
-                    onClick={() => handleDraftSlotEdit(hero)}
-                  >
+                });
+                
+                console.log('ExportModal - Search results:', {
+                  searchTerm: draftSlotSearch,
+                  totalHeroes: heroList.length,
+                  uniqueHeroes: uniqueHeroes.length,
+                  filteredHeroes: filteredHeroes.length,
+                  filteredHeroNames: filteredHeroes.map(h => h.name)
+                });
+                
+                return filteredHeroes;
+              })()
+                .map(hero => {
+                  // Check if hero is already banned/picked (but allow current slot hero)
+                  const bannedAndPickedHeroes = getAllBannedAndPickedHeroes();
+                  const currentSlotHero = selectedDraftSlot ? 
+                    (selectedDraftSlot.type === 'ban' ? 
+                      banning[selectedDraftSlot.team]?.[selectedDraftSlot.index] : 
+                      picks[selectedDraftSlot.team]?.[selectedDraftSlot.index]
+                    ) : null;
+                  
+                  const currentHeroName = currentSlotHero?.hero?.name ?? currentSlotHero?.name ?? currentSlotHero;
+                  const isAlreadyUsed = bannedAndPickedHeroes.some(n => n?.toLowerCase() === hero.name.toLowerCase()) && 
+                    hero.name.toLowerCase() !== currentHeroName?.toLowerCase();
+                  
+                  return (
+                    <button
+                      key={hero.name}
+                      type="button"
+                      className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all ${
+                        isAlreadyUsed 
+                          ? 'border-red-600 bg-red-900/30 text-red-400 cursor-not-allowed opacity-60' 
+                          : 'border-transparent hover:border-blue-400 hover:bg-blue-900/20 text-white'
+                      }`}
+                      onClick={() => !isAlreadyUsed && handleDraftSlotEdit(hero)}
+                      disabled={isAlreadyUsed}
+                      title={isAlreadyUsed ? `${hero.name} is already banned/picked` : hero.name}
+                    >
                     <div className="w-16 h-16 rounded-full shadow-lg overflow-hidden flex items-center justify-center mb-2 bg-gradient-to-b from-blue-900 to-blue-700">
                       <img
                         src={`${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/hero-image/${hero.role?.trim().toLowerCase()}/${encodeURIComponent(hero.image)}`}
@@ -2898,8 +3893,9 @@ export default function ExportModal({
                     <span className="text-sm font-semibold text-center w-20 truncate">
                       {hero.name}
                     </span>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
             </div>
             
             <div className="flex justify-end gap-4">

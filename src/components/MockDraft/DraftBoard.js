@@ -29,11 +29,13 @@ export default function DraftBoard({
   handleDraftSlotClick,
   handleDraftSlotEdit,
   isCompleteDraft = false,
+  isEditing = false,
   customLaneAssignments,
   onLaneReassign,
   onLaneSwap,
   areAllLanesAssigned = true,
-  areLaneAssignmentsValid = true
+  areLaneAssignmentsValid = true,
+  timerEnabled = false
 }) {
   // Normalize picks to ensure consistent hero object structure
   const normalize = (arr = []) => arr.map(x => {
@@ -117,6 +119,11 @@ export default function DraftBoard({
   // Process team picks with winrate data
   const processTeamPicks = useCallback((teamPicks, heroRankData) => {
     return teamPicks.map(heroPick => {
+      // Handle null/undefined picks
+      if (!heroPick) {
+        return { hero: null, winrate: 0, heroData: null };
+      }
+      
       const hero = heroPick.hero || heroPick;
       
       if (!hero || !hero.name) {
@@ -162,14 +169,14 @@ export default function DraftBoard({
     }
   }, [draftFinished, heroRankData.length, fetchMLBBHeroData]);
 
-  // Process picks when hero data is available
+  // Process picks when hero data is available or when picks change
   useEffect(() => {
-    if (heroRankData.length > 0 && draftFinished) {
-      const blueProcessed = processTeamPicks(picks.blue, heroRankData);
-      const redProcessed = processTeamPicks(picks.red, heroRankData);
+    if (heroRankData.length > 0) {
+      const blueProcessed = processTeamPicks(picks.blue || [], heroRankData);
+      const redProcessed = processTeamPicks(picks.red || [], heroRankData);
       setProcessedPicks({ blue: blueProcessed, red: redProcessed });
     }
-  }, [heroRankData, picks, draftFinished, processTeamPicks]);
+  }, [heroRankData, picks, processTeamPicks]);
 
   // Show loading screen when heroes are still loading
   if (heroLoading) {
@@ -189,115 +196,130 @@ export default function DraftBoard({
             marginTop: 40,
           }}
         >
-          {/* Structured Top Ban Slots */}
-          <div className="absolute left-0 right-0 top-0 flex flex-row justify-center items-start w-full pt-8 z-30">
-            <div className="container flex flex-row justify-between items-start w-full" style={{ width: '100%' }}>
-              {/* Blue team name input */}
-              <div className="flex flex-col items-start pl-2" style={{ position: 'relative' }}>
-                {!isCompleteDraft && (
-                  <TeamNameInputs
-                    blueTeamName={blueTeamName}
-                    setBlueTeamName={setBlueTeamName}
-                    redTeamName={redTeamName}
-                    setRedTeamName={setRedTeamName}
-                  />
-                )}
-                <div id="left-container" className="box flex flex-row gap-2" style={{ marginTop: 0 }}>
-                  <DraftSlots 
-                    type="ban" 
-                    team="blue" 
-                    heroes={bans.blue} 
-                    size="w-12 h-12" 
-                    isActiveSlot={isActiveSlot}
-                    handleHeroRemove={handleHeroRemove}
-                    handleDraftSlotClick={handleDraftSlotClick}
-                    handleDraftSlotEdit={handleDraftSlotEdit}
-                    isCompleteDraft={isCompleteDraft}
-                    customLaneAssignments={customLaneAssignments}
-                    onLaneSwap={onLaneSwap}
-                    heroList={heroList}
-                  />
+          {/* Structured Top Ban Slots - only show when draft is not finished */}
+          {!draftFinished && (
+            <div className="absolute left-0 right-0 top-0 flex flex-row justify-center items-start w-full pt-8 z-30">
+              <div className="container flex flex-row justify-between items-start w-full" style={{ width: '100%' }}>
+                {/* Blue team name input */}
+                <div className="flex flex-col items-start pl-2" style={{ position: 'relative' }}>
+                  {!isCompleteDraft && (
+                    <TeamNameInputs
+                      blueTeamName={blueTeamName}
+                      setBlueTeamName={setBlueTeamName}
+                      redTeamName={redTeamName}
+                      setRedTeamName={setRedTeamName}
+                    />
+                  )}
+                  <div id="left-container" className="box flex flex-row gap-2" style={{ marginTop: 0 }}>
+                    <DraftSlots 
+                      type="ban" 
+                      team="blue" 
+                      heroes={bans.blue} 
+                      size="w-12 h-12" 
+                      isActiveSlot={isActiveSlot}
+                      handleHeroRemove={handleHeroRemove}
+                      handleDraftSlotClick={handleDraftSlotClick}
+                      handleDraftSlotEdit={handleDraftSlotEdit}
+                      isCompleteDraft={isCompleteDraft}
+                      isEditing={isEditing}
+                      customLaneAssignments={customLaneAssignments}
+                      onLaneSwap={onLaneSwap}
+                      heroList={heroList}
+                      timerEnabled={timerEnabled}
+                    />
+                  </div>
                 </div>
-              </div>
-              <div className="middle-content flex-1 flex flex-col items-center justify-center" style={{ minWidth: 220 }}>
-                {!isCompleteDraft && (
-                  <DraftTimer
-                    currentStep={currentStep}
-                    draftFinished={draftFinished}
-                    draftSteps={draftSteps}
-                    timer={timer}
-                    areAllLanesAssigned={areAllLanesAssigned}
-                    areLaneAssignmentsValid={areLaneAssignmentsValid}
-                  />
-                )}
-              </div>
-              {/* Red team name input */}
-              <div className="flex flex-col items-end pr-2" style={{ position: 'relative' }}>
-                {!isCompleteDraft && (
-                  <input
-                    id="red-team-name"
-                    type="text"
-                    value={redTeamName}
-                    onChange={e => setRedTeamName(e.target.value)}
-                    placeholder="Team Red"
-                    className="px-3 py-1 rounded bg-red-700 text-white font-bold text-lg text-right mb-2 pr-2 w-32 focus:outline-none focus:ring-2 focus:ring-red-400"
-                    maxLength={20}
-                    style={{ zIndex: 2, position: 'relative' }}
-                  />
-                )}
-                <div id="right-container" className="box flex flex-row gap-2" style={{ marginTop: 0 }}>
-                  <DraftSlots 
-                    type="ban" 
-                    team="red" 
-                    heroes={bans.red} 
-                    size="w-12 h-12" 
-                    isActiveSlot={isActiveSlot}
-                    handleHeroRemove={handleHeroRemove}
-                    handleDraftSlotClick={handleDraftSlotClick}
-                    handleDraftSlotEdit={handleDraftSlotEdit}
-                    isCompleteDraft={isCompleteDraft}
-                    customLaneAssignments={customLaneAssignments}
-                    onLaneSwap={onLaneSwap}
-                    heroList={heroList}
-                  />
+                <div className="middle-content flex-1 flex flex-col items-center justify-center" style={{ minWidth: 220 }}>
+                  {!isCompleteDraft && (
+                    <DraftTimer
+                      currentStep={currentStep}
+                      draftFinished={draftFinished}
+                      draftSteps={draftSteps}
+                      timer={timer}
+                      areAllLanesAssigned={areAllLanesAssigned}
+                      areLaneAssignmentsValid={areLaneAssignmentsValid}
+                      timerEnabled={timerEnabled}
+                    />
+                  )}
+                </div>
+                {/* Red team name input */}
+                <div className="flex flex-col items-end pr-2" style={{ position: 'relative' }}>
+                  {!isCompleteDraft && (
+                    <input
+                      id="red-team-name"
+                      type="text"
+                      value={redTeamName}
+                      onChange={e => setRedTeamName(e.target.value)}
+                      placeholder="Team Red"
+                      className="px-3 py-1 rounded bg-red-700 text-white font-bold text-lg text-right mb-2 pr-2 w-32 focus:outline-none focus:ring-2 focus:ring-red-400"
+                      maxLength={20}
+                      style={{ zIndex: 2, position: 'relative' }}
+                    />
+                  )}
+                  <div id="right-container" className="box flex flex-row gap-2" style={{ marginTop: 0 }}>
+                    <DraftSlots 
+                      type="ban" 
+                      team="red" 
+                      heroes={bans.red} 
+                      size="w-12 h-12" 
+                      isActiveSlot={isActiveSlot}
+                      handleHeroRemove={handleHeroRemove}
+                      handleDraftSlotClick={handleDraftSlotClick}
+                      handleDraftSlotEdit={handleDraftSlotEdit}
+                      isCompleteDraft={isCompleteDraft}
+                      isEditing={isEditing}
+                      customLaneAssignments={customLaneAssignments}
+                      onLaneSwap={onLaneSwap}
+                      heroList={heroList}
+                      timerEnabled={timerEnabled}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          {/* Blue side pick slots (left) */}
-          <div className="absolute left-0 flex flex-col gap-y-3" style={{ top: '140px' }}>
-            <DraftSlots 
-              type="pick" 
-              team="blue" 
-              heroes={normalize(picks.blue)} 
-              size="w-16 h-16" 
-              isActiveSlot={isActiveSlot}
-              handleHeroRemove={handleHeroRemove}
-              handleDraftSlotClick={handleDraftSlotClick}
-              handleDraftSlotEdit={handleDraftSlotEdit}
-              isCompleteDraft={isCompleteDraft}
-              customLaneAssignments={customLaneAssignments}
-              onLaneSwap={onLaneSwap}
-              heroList={heroList}
-            />
-          </div>
-          {/* Red side pick slots (right) */}
-          <div className="absolute right-0 flex flex-col gap-y-3" style={{ top: '140px' }}>
-            <DraftSlots 
-              type="pick" 
-              team="red" 
-              heroes={normalize(picks.red)} 
-              size="w-16 h-16" 
-              isActiveSlot={isActiveSlot}
-              handleHeroRemove={handleHeroRemove}
-              handleDraftSlotClick={handleDraftSlotClick}
-              handleDraftSlotEdit={handleDraftSlotEdit}
-              isCompleteDraft={isCompleteDraft}
-              customLaneAssignments={customLaneAssignments}
-              onLaneSwap={onLaneSwap}
-              heroList={heroList}
-            />
-          </div>
+          )}
+          {/* Blue side pick slots (left) - only show when draft is not finished */}
+          {!draftFinished && (
+            <div className="absolute left-0 flex flex-col gap-y-3" style={{ top: '140px' }}>
+              <DraftSlots 
+                type="pick" 
+                team="blue" 
+                heroes={normalize(picks.blue || [])} 
+                size="w-16 h-16" 
+                isActiveSlot={isActiveSlot}
+                handleHeroRemove={handleHeroRemove}
+                handleDraftSlotClick={handleDraftSlotClick}
+                handleDraftSlotEdit={handleDraftSlotEdit}
+                isCompleteDraft={isCompleteDraft}
+                isEditing={isEditing}
+                customLaneAssignments={customLaneAssignments}
+                onLaneSwap={onLaneSwap}
+                heroList={heroList}
+                timerEnabled={timerEnabled}
+              />
+            </div>
+          )}
+          {/* Red side pick slots (right) - only show when draft is not finished */}
+          {!draftFinished && (
+            <div className="absolute right-0 flex flex-col gap-y-3" style={{ top: '140px' }}>
+              <DraftSlots 
+                type="pick" 
+                team="red" 
+                heroes={normalize(picks.red || [])} 
+                size="w-16 h-16" 
+                isActiveSlot={isActiveSlot}
+                handleHeroRemove={handleHeroRemove}
+                handleDraftSlotClick={handleDraftSlotClick}
+                handleDraftSlotEdit={handleDraftSlotEdit}
+                isCompleteDraft={isCompleteDraft}
+                isEditing={isEditing}
+                customLaneAssignments={customLaneAssignments}
+                onLaneSwap={onLaneSwap}
+                heroList={heroList}
+                timerEnabled={timerEnabled}
+              />
+            </div>
+          )}
           {/* Inner Panel - Fixed duplicate margins */}
           {!draftFinished ? (
             <div className="relative w-[900px] h-[480px] rounded-2xl bg-gradient-to-br from-[#181A20cc] via-[#23232acc] to-[#181A20cc] flex flex-col items-center justify-start pt-8 z-20 mt-24 overflow-y-auto">
@@ -320,8 +342,97 @@ export default function DraftBoard({
           ) : (
             /* Draft Analysis Preview - Transparent Background */
             <div className="relative w-full h-full flex flex-col items-center justify-center z-20 mt-8">
+              {/* Keep DraftSlots visible for editing even when draft is finished */}
+              <div className="absolute inset-0 z-10">
+                {/* Blue side pick slots (left) - for editing */}
+                <div className="absolute left-0 flex flex-col gap-y-3" style={{ top: '140px' }}>
+                  <DraftSlots 
+                    type="pick" 
+                    team="blue" 
+                    heroes={normalize(picks.blue || [])} 
+                    size="w-16 h-16" 
+                    isActiveSlot={isActiveSlot}
+                    handleHeroRemove={handleHeroRemove}
+                    handleDraftSlotClick={handleDraftSlotClick}
+                    handleDraftSlotEdit={handleDraftSlotEdit}
+                    isCompleteDraft={isCompleteDraft}
+                    isEditing={isEditing}
+                    customLaneAssignments={customLaneAssignments}
+                    onLaneSwap={onLaneSwap}
+                    heroList={heroList}
+                    timerEnabled={timerEnabled}
+                  />
+                </div>
+                {/* Red side pick slots (right) - for editing */}
+                <div className="absolute right-0 flex flex-col gap-y-3" style={{ top: '140px' }}>
+                  <DraftSlots 
+                    type="pick" 
+                    team="red" 
+                    heroes={normalize(picks.red || [])} 
+                    size="w-16 h-16" 
+                    isActiveSlot={isActiveSlot}
+                    handleHeroRemove={handleHeroRemove}
+                    handleDraftSlotClick={handleDraftSlotClick}
+                    handleDraftSlotEdit={handleDraftSlotEdit}
+                    isCompleteDraft={isCompleteDraft}
+                    isEditing={isEditing}
+                    customLaneAssignments={customLaneAssignments}
+                    onLaneSwap={onLaneSwap}
+                    heroList={heroList}
+                    timerEnabled={timerEnabled}
+                  />
+                </div>
+                {/* Ban slots - for editing */}
+                <div className="absolute left-0 right-0 top-0 flex flex-row justify-center items-start w-full pt-8 z-30">
+                  <div className="container flex flex-row justify-between items-start w-full" style={{ width: '100%' }}>
+                    <div className="flex flex-col items-start pl-2" style={{ position: 'relative' }}>
+                      <div id="left-container" className="box flex flex-row gap-2" style={{ marginTop: 0 }}>
+                        <DraftSlots 
+                          type="ban" 
+                          team="blue" 
+                          heroes={bans.blue} 
+                          size="w-12 h-12" 
+                          isActiveSlot={isActiveSlot}
+                          handleHeroRemove={handleHeroRemove}
+                          handleDraftSlotClick={handleDraftSlotClick}
+                          handleDraftSlotEdit={handleDraftSlotEdit}
+                          isCompleteDraft={isCompleteDraft}
+                          isEditing={isEditing}
+                          customLaneAssignments={customLaneAssignments}
+                          onLaneSwap={onLaneSwap}
+                          heroList={heroList}
+                          timerEnabled={timerEnabled}
+                        />
+                      </div>
+                    </div>
+                    <div className="middle-content flex-1 flex flex-col items-center justify-center" style={{ minWidth: 220 }}>
+                      {/* Empty space for timer area */}
+                    </div>
+                    <div className="flex flex-col items-end pr-2" style={{ position: 'relative' }}>
+                      <div id="right-container" className="box flex flex-row gap-2" style={{ marginTop: 0 }}>
+                        <DraftSlots 
+                          type="ban" 
+                          team="red" 
+                          heroes={bans.red} 
+                          size="w-12 h-12" 
+                          isActiveSlot={isActiveSlot}
+                          handleHeroRemove={handleHeroRemove}
+                          handleDraftSlotClick={handleDraftSlotClick}
+                          handleDraftSlotEdit={handleDraftSlotEdit}
+                          isCompleteDraft={isCompleteDraft}
+                          isEditing={isEditing}
+                          customLaneAssignments={customLaneAssignments}
+                          onLaneSwap={onLaneSwap}
+                          heroList={heroList}
+                          timerEnabled={timerEnabled}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
               {/* Loading State or Team Advantage Header */}
-              <div className="text-center mb-6">
+              <div className="text-center mb-6 relative z-0">
                 {heroRankData.length === 0 ? (
                   /* Loading State */
                   <div className="flex flex-col items-center space-y-4">
@@ -361,7 +472,7 @@ export default function DraftBoard({
               {/* Team Analysis Tables */}
               {heroRankData.length === 0 ? (
                 /* Loading State for Tables */
-                <div className="flex justify-center gap-8 w-full max-w-5xl">
+                <div className="flex justify-center gap-8 w-full max-w-5xl relative z-0">
                   <div className="flex-1 max-w-md">
                     <div className="bg-black/30 backdrop-blur-sm rounded-lg p-4 border border-blue-500/30">
                       <h3 className="text-xl font-semibold text-blue-400 mb-4 text-center">{blueTeamName || 'Blue Team'}</h3>
@@ -418,7 +529,7 @@ export default function DraftBoard({
                 </div>
               ) : (
                 /* Actual Team Tables with Data */
-                <div className="flex justify-center gap-8 w-full max-w-5xl">
+                <div className="flex justify-center gap-8 w-full max-w-5xl relative z-0">
                   {/* {blueTeamName || 'Blue Team'} Table */}
                   <div className="flex-1 max-w-md">
                     <div className="bg-black/30 backdrop-blur-sm rounded-lg p-4 border border-blue-500/30">

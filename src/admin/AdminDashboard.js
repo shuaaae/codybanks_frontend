@@ -20,6 +20,11 @@ export default function AdminDashboard() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [passwordResetRequests, setPasswordResetRequests] = useState([]);
+  const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // Admin session timeout: 20 minutes
   useSessionTimeout(20, 'adminUser', '/admin/login');
@@ -42,6 +47,7 @@ export default function AdminDashboard() {
     
     setCurrentUser(user);
     loadUsers();
+    loadPasswordResetRequests();
   }, [navigate]);
 
   useEffect(() => {
@@ -74,6 +80,77 @@ export default function AdminDashboard() {
       }
     } catch (error) {
       console.error('Error loading users:', error);
+    }
+  };
+
+  const loadPasswordResetRequests = async () => {
+    try {
+      const token = localStorage.getItem('adminAuthToken');
+      
+      const response = await fetch(buildApiUrl('/admin/password-reset-requests'), {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setPasswordResetRequests(data);
+      } else {
+        console.error('Failed to load password reset requests:', response.status);
+      }
+    } catch (error) {
+      console.error('Error loading password reset requests:', error);
+    }
+  };
+
+  const handleResetPassword = (user) => {
+    setSelectedUser(user);
+    setNewPassword('');
+    setShowPasswordResetModal(true);
+  };
+
+  const handleConfirmPasswordReset = async () => {
+    if (!selectedUser || !newPassword.trim()) {
+      setError('Please enter a new password');
+      return;
+    }
+
+    setIsResettingPassword(true);
+    setError('');
+
+    try {
+      const token = localStorage.getItem('adminAuthToken');
+      
+      const response = await fetch(buildApiUrl('/admin/reset-user-password'), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: selectedUser.id,
+          new_password: newPassword
+        }),
+      });
+
+      if (response.ok) {
+        // Password reset successful
+        setShowPasswordResetModal(false);
+        setSelectedUser(null);
+        setNewPassword('');
+        // Reload users and password reset requests
+        loadUsers();
+        loadPasswordResetRequests();
+        alert('Password reset successfully!');
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to reset password');
+      }
+    } catch (error) {
+      setError(error.message || 'Failed to reset password');
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -260,6 +337,53 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          {/* Password Reset Requests */}
+          <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white">Password Reset Requests</h2>
+              <button
+                onClick={loadPasswordResetRequests}
+                className="text-blue-400 hover:text-blue-300 text-sm transition-colors duration-200"
+              >
+                Refresh
+              </button>
+            </div>
+            
+            {passwordResetRequests.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-gray-400 text-sm">No password reset requests</div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {passwordResetRequests.map((request) => {
+                  const user = users.find(u => u.email === request.email);
+                  return (
+                    <div key={request.id} className="bg-gray-700 rounded-lg p-4 flex items-center justify-between">
+                      <div>
+                        <div className="text-white font-medium">{request.email}</div>
+                        <div className="text-gray-400 text-sm">
+                          Requested: {new Date(request.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="flex space-x-2">
+                        {user ? (
+                          <button
+                            onClick={() => handleResetPassword(user)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition-colors duration-200"
+                          >
+                            Reset Password
+                          </button>
+                        ) : (
+                          <span className="text-gray-500 text-sm">User not found</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Admin Statistics */}
           <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
             <h2 className="text-xl font-bold text-white mb-6">Admin Statistics</h2>
@@ -370,6 +494,81 @@ export default function AdminDashboard() {
                   {loading ? 'Creating User...' : 'Create User'}
                 </button>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password Reset Modal */}
+      {showPasswordResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80 backdrop-blur-sm p-4">
+          <div className="relative bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-3xl border border-gray-600 shadow-2xl w-[95vw] max-w-md flex flex-col overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 opacity-50"></div>
+            
+            <button 
+              className="absolute top-6 right-6 text-gray-400 hover:text-white text-2xl font-bold transition-colors duration-200 z-50 cursor-pointer hover:scale-110 bg-gray-800/50 rounded-full w-8 h-8 flex items-center justify-center" 
+              onClick={() => setShowPasswordResetModal(false)}
+              type="button"
+            >
+              ✕
+            </button>
+            
+            <div className="relative z-10 text-center p-8">
+              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-xl">
+                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+              </div>
+              
+              <h2 className="text-2xl font-bold text-white mb-2 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                Reset Password
+              </h2>
+              <p className="text-gray-300 text-sm mb-6">
+                Set a new password for {selectedUser?.email}
+              </p>
+            </div>
+
+            <div className="relative z-10 px-8 pb-8">
+              {/* New Password Input */}
+              <div className="mb-6">
+                <label className="block text-gray-300 text-sm font-medium mb-2">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  className="w-full bg-gray-800/80 backdrop-blur-sm border border-gray-600 rounded-2xl py-4 px-6 text-white placeholder-gray-400 outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-all duration-200"
+                  placeholder="Enter new password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  disabled={isResettingPassword}
+                />
+              </div>
+              
+              {/* Error Display */}
+              {error && (
+                <div className="bg-red-900/20 border border-red-600 rounded-lg p-3 mb-6">
+                  <div className="text-red-400 text-sm">{error}</div>
+                </div>
+              )}
+              
+              {/* Action Buttons */}
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowPasswordResetModal(false)}
+                  className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-4 px-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-[1.02] transform"
+                  disabled={isResettingPassword}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmPasswordReset}
+                  disabled={isResettingPassword || !newPassword.trim()}
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-bold py-4 px-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-[1.02] transform disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isResettingPassword ? 'Resetting...' : 'Reset Password'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,5 +1,33 @@
 import React from 'react';
 import hoverBg from '../../assets/hoverbg.jpg';
+import dangerousGrass from '../../assets/Dangerous Grass.webp';
+import flyingClouds from '../../assets/Flying Clouds.webp';
+import brokenWalls from '../../assets/Broken Walls.webp';
+import expandingRiver from '../../assets/Expanding River.webp';
+
+// Function to get background image based on annual map
+const getMapBackgroundImage = (annualMap) => {
+  console.log('getMapBackgroundImage called with:', annualMap);
+  let result = null;
+  switch (annualMap) {
+    case 'Dangerous Grass':
+      result = dangerousGrass;
+      break;
+    case 'Flying Cloud':
+      result = flyingClouds;
+      break;
+    case 'Broken Walls':
+      result = brokenWalls;
+      break;
+    case 'Expanding River':
+      result = expandingRiver;
+      break;
+    default:
+      result = null;
+  }
+  console.log('getMapBackgroundImage result:', result);
+  return result;
+};
 
 // Optimized hero image component
 const OptimizedHeroImage = React.memo(({ heroName, size = 40, isBan = false, className = "", heroMap }) => {
@@ -70,8 +98,8 @@ const OptimizedHeroImage = React.memo(({ heroName, size = 40, isBan = false, cla
 const OptimizedBanHeroIcon = React.memo(({ heroName, heroMap }) => {
   const [imageError, setImageError] = React.useState(false);
   
-  // Handle null/undefined heroName
-  if (!heroName) {
+  // Handle null/undefined heroName or invalid heroMap
+  if (!heroName || typeof heroName !== 'string' || !heroMap) {
     return (
       <div style={{ 
         width: 40, 
@@ -88,7 +116,7 @@ const OptimizedBanHeroIcon = React.memo(({ heroName, heroMap }) => {
   }
   
   const hero = heroMap.get(heroName);
-  const imagePath = hero ? `https://api.coachdatastatistics.site/heroes/${hero.role?.trim().toLowerCase()}/${hero.image}` : null;
+  const imagePath = hero && hero.role && hero.image ? `https://api.coachdatastatistics.site/heroes/${hero.role.trim().toLowerCase()}/${hero.image}` : null;
   
   if (!hero || !imagePath) {
     return (
@@ -148,6 +176,32 @@ const OptimizedBanHeroIcon = React.memo(({ heroName, heroMap }) => {
 export default function MatchHoverModal({ match, heroMap, isVisible, onMouseEnter, onMouseLeave }) {
   if (!isVisible || !match) return null;
 
+  // Get annual map from match data only - no fallbacks
+  const annualMapValue = match.annual_map || match.annualMap || '';
+  
+  console.log('MatchHoverModal - Annual map check:', {
+    'match.annual_map': match.annual_map,
+    'match.annualMap': match.annualMap,
+    'annualMapValue': annualMapValue,
+    'hasAnnualMap': !!annualMapValue
+  });
+  
+  const backgroundImageUrl = annualMapValue ? getMapBackgroundImage(annualMapValue) : null;
+  const finalBackground = annualMapValue && backgroundImageUrl 
+    ? `linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), url("${backgroundImageUrl}") center/cover`
+    : 'rgba(0,0,0,0.7)';
+    
+  console.log('MatchHoverModal - Match data:', {
+    match: match,
+    annual_map: match.annual_map,
+    annualMap: match.annualMap,
+    annualMapValue: annualMapValue,
+    hasAnnualMap: !!annualMapValue,
+    backgroundImage: backgroundImageUrl,
+    finalBackground: finalBackground,
+    allMatchKeys: Object.keys(match)
+  });
+
   // Center the hovered details
   const viewportHeight = window.innerHeight;
   const viewportWidth = window.innerWidth;
@@ -178,14 +232,41 @@ export default function MatchHoverModal({ match, heroMap, isVisible, onMouseEnte
 
   // Combine bans (max 5)
   const getBans = (team) => {
-    const bans = [...(team.banning_phase1 || []), ...(team.banning_phase2 || [])];
+    if (!team) return Array(5).fill(null);
+    
+    // Debug logging for hover modal
+    console.log(`MatchHoverModal - Team ${team.team} banning data:`, {
+      banning_phase1: team.banning_phase1,
+      banning_phase2: team.banning_phase2
+    });
+    
+    const bans = [
+      ...(Array.isArray(team.banning_phase1) ? team.banning_phase1 : []),
+      ...(Array.isArray(team.banning_phase2) ? team.banning_phase2 : [])
+    ].map(banItem => {
+      // Handle both string and object formats
+      if (typeof banItem === 'string') {
+        return banItem.trim() !== '' ? banItem : null;
+      } else if (typeof banItem === 'object' && banItem !== null) {
+        // Extract hero name from object (could be 'hero', 'name', or 'heroName' property)
+        return banItem.hero || banItem.name || banItem.heroName || null;
+      }
+      return null;
+    }).filter(ban => ban && typeof ban === 'string' && ban.trim() !== '');
+    
+    console.log(`MatchHoverModal - Processed bans for ${team.team}:`, bans);
+    
     while (bans.length < 5) bans.push(null);
     return bans.slice(0, 5);
   };
 
   // Combine picks (vertical)
   const getPicks = (team) => {
-    return [...(team.picks1 || []), ...(team.picks2 || [])];
+    if (!team) return [];
+    return [
+      ...(Array.isArray(team.picks1) ? team.picks1 : []),
+      ...(Array.isArray(team.picks2) ? team.picks2 : [])
+    ].filter(pick => pick && (typeof pick === 'string' || (typeof pick === 'object' && pick.hero)));
   };
 
   return (
@@ -265,7 +346,7 @@ export default function MatchHoverModal({ match, heroMap, isVisible, onMouseEnte
           alignItems: 'center',
           gap: '16px',
           padding: '24px',
-          background: 'rgba(0,0,0,0.7)',
+          background: finalBackground,
           borderRadius: '16px',
           border: '1px solid rgba(255,255,255,0.15)',
           backdropFilter: 'blur(15px)',
@@ -276,7 +357,29 @@ export default function MatchHoverModal({ match, heroMap, isVisible, onMouseEnte
           zIndex: 2,
           width: '500px',
           boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
         }}>
+          {/* Annual Map */}
+          {annualMapValue && (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              padding: '12px',
+              background: 'linear-gradient(135deg, rgba(34,197,94,0.15), rgba(34,197,94,0.05))',
+              borderRadius: '10px',
+              border: '1px solid rgba(34,197,94,0.2)',
+              boxShadow: '0 4px 12px rgba(34,197,94,0.1)',
+              marginBottom: '16px',
+              width: '100%',
+            }}>
+              <div style={{ fontSize: '10px', color: '#86efac', fontWeight: 'bold', marginBottom: '8px' }}>Annual Map</div>
+              <div style={{ fontSize: '16px', color: 'white', fontWeight: 'bold', textAlign: 'center', width: '100%' }}>{annualMapValue}</div>
+            </div>
+          )}
+          
           <div style={{
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',

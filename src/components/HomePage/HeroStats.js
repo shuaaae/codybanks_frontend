@@ -141,9 +141,30 @@ const HeroStats = ({ isOpen, onClose, matches = [] }) => {
           ...(team.banning_phase2 || [])
         ];
         
-        allBans.forEach(ban => {
-          if (ban && stats[ban]) {
-            stats[ban].ban++;
+        // Debug logging for hero stats banning data
+        if (allBans.length > 0) {
+          console.log(`HeroStats - Team ${team.team} banning data:`, {
+            banning_phase1: team.banning_phase1,
+            banning_phase2: team.banning_phase2,
+            allBans: allBans
+          });
+        }
+        
+        allBans.forEach(banItem => {
+          // Handle both string and object formats
+          let banName = null;
+          if (typeof banItem === 'string') {
+            banName = banItem.trim() !== '' ? banItem : null;
+          } else if (typeof banItem === 'object' && banItem !== null) {
+            // Extract hero name from object (could be 'hero', 'name', or 'heroName' property)
+            banName = banItem.hero || banItem.name || banItem.heroName || null;
+          }
+          
+          if (banName && stats[banName]) {
+            console.log(`HeroStats - Counting ban for ${banName}`);
+            stats[banName].ban++;
+          } else if (banName) {
+            console.log(`HeroStats - Hero ${banName} not found in stats`);
           }
         });
       });

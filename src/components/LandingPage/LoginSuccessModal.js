@@ -1,12 +1,19 @@
 import React, { useEffect, useState } from 'react';
 
 export default function LoginSuccessModal({ isOpen, onClose, userName }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
   const [showCheck, setShowCheck] = useState(false);
   const [showMessage, setShowMessage] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      // Start animations in sequence
+      setIsVisible(true);
+      // Reset animation state and then start animation
+      setIsAnimating(false);
+      setTimeout(() => setIsAnimating(true), 10);
+      
+      // Start internal animations in sequence
       const timer1 = setTimeout(() => setShowCheck(true), 300);
       const timer2 = setTimeout(() => setShowMessage(true), 800);
       
@@ -21,17 +28,26 @@ export default function LoginSuccessModal({ isOpen, onClose, userName }) {
         clearTimeout(timer3);
       };
     } else {
+      setIsAnimating(false);
       // Reset states when modal closes
       setShowCheck(false);
       setShowMessage(false);
+      // Wait for animation to complete before hiding
+      setTimeout(() => setIsVisible(false), 300);
     }
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isVisible) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-80 backdrop-blur-sm p-4">
-      <div className="relative bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-3xl border border-gray-600 shadow-2xl w-[95vw] max-w-md flex flex-col items-center justify-center p-8 overflow-hidden">
+    <div className={`fixed inset-0 z-[100] flex items-center justify-center bg-black backdrop-blur-sm p-4 transition-all duration-300 ${
+      isAnimating ? 'bg-opacity-80' : 'bg-opacity-0'
+    }`}>
+      <div className={`relative bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-3xl border border-gray-600 shadow-2xl w-[95vw] max-w-md flex flex-col items-center justify-center p-8 overflow-hidden transition-all duration-300 transform ${
+        isAnimating 
+          ? 'scale-100 opacity-100 translate-y-0' 
+          : 'scale-95 opacity-0 translate-y-4'
+      }`}>
         {/* Background Pattern */}
         <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-emerald-500/5 opacity-50"></div>
         

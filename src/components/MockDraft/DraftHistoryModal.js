@@ -27,7 +27,17 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
         return;
       }
 
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/drafts?user_id=${currentUser.id}`);
+      // Get current team name for filtering
+      const latestTeam = localStorage.getItem('latestTeam');
+      const currentTeamName = latestTeam ? JSON.parse(latestTeam).teamName || JSON.parse(latestTeam).name : null;
+
+      // Build URL with team name filter if available
+      let url = `${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/drafts?user_id=${currentUser.id}`;
+      if (currentTeamName) {
+        url += `&team_name=${encodeURIComponent(currentTeamName)}`;
+      }
+
+      const response = await fetch(url);
       const result = await response.json();
       
       if (result.success) {
@@ -186,7 +196,16 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
         <div className="bg-[#23232a] rounded-lg p-6 max-w-6xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col z-[99999]">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-white">Draft History</h2>
+          <div>
+            <h2 className="text-2xl font-bold text-white">Draft History</h2>
+            {(() => {
+              const latestTeam = localStorage.getItem('latestTeam');
+              const currentTeamName = latestTeam ? JSON.parse(latestTeam).teamName || JSON.parse(latestTeam).name : null;
+              return currentTeamName ? (
+                <p className="text-blue-400 text-sm mt-1">Showing drafts for: {currentTeamName}</p>
+              ) : null;
+            })()}
+          </div>
           <button
             onClick={handleClose}
             className="text-gray-400 hover:text-white text-2xl font-bold"
@@ -233,6 +252,11 @@ export default function DraftHistoryModal({ isOpen, onClose }) {
                     <div className="text-white font-semibold mb-2">
                       {draft.blue_team_name || 'Blue Team'} vs {draft.red_team_name || 'Red Team'}
                     </div>
+                    {draft.team_name && (
+                      <div className="text-blue-400 text-sm mb-1 font-medium">
+                        Team: {draft.team_name}
+                      </div>
+                    )}
                     <div className="text-gray-300 text-sm mb-2">
                       {new Date(draft.created_at).toLocaleDateString()} at {new Date(draft.created_at).toLocaleTimeString()}
                     </div>

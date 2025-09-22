@@ -63,7 +63,8 @@ export default function ObjectiveStatsModal({
         yAxisID: 'y1',
         pointRadius: 3,
         order: 10,
-        z: 10
+        z: 10,
+        spanGaps: true // Connect points even when there are gaps in data
       }
     ]
   };

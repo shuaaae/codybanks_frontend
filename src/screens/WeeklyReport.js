@@ -273,7 +273,19 @@ export default function WeeklyReport() {
         setLoading(true);
         
         console.log('Initial data fetch on mount for date range:', startDate, 'to', endDate);
-        fetch(buildApiUrl(`/matches?match_type=${matchMode}`), {
+        
+        // Get team_id from localStorage
+        const latestTeam = JSON.parse(localStorage.getItem('latestTeam') || '{}');
+        const teamId = latestTeam.id;
+        console.log('Using team_id for initial API call:', teamId);
+        
+        const apiUrl = teamId ? 
+          buildApiUrl(`/matches?match_type=${matchMode}&team_id=${teamId}`) : 
+          buildApiUrl(`/matches?match_type=${matchMode}`);
+        
+        console.log('Initial API URL:', apiUrl);
+        
+        fetch(apiUrl, {
           credentials: 'include'
         })
           .then(res => res.json())
@@ -505,11 +517,15 @@ export default function WeeklyReport() {
       const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
       console.log('Latest team from localStorage:', latestTeam);
       if (latestTeam && latestTeam.teamName) {
+        console.log('Returning team name:', latestTeam.teamName);
         return latestTeam.teamName;
+      } else {
+        console.warn('No teamName found in latestTeam:', latestTeam);
       }
     } catch (error) {
       console.warn('Error parsing latestTeam from localStorage:', error);
     }
+    console.warn('No active team found, returning null');
     return null; // no active team
   }
 
@@ -521,7 +537,19 @@ export default function WeeklyReport() {
     setLoading(true);
     
     console.log('Fetching matches for date range:', startDate, 'to', endDate);
-    fetch(buildApiUrl(`/matches?match_type=${matchMode}`), {
+    
+    // Get team_id from localStorage
+    const latestTeam = JSON.parse(localStorage.getItem('latestTeam') || '{}');
+    const teamId = latestTeam.id;
+    console.log('Using team_id for API call:', teamId);
+    
+    const apiUrl = teamId ? 
+      buildApiUrl(`/matches?match_type=${matchMode}&team_id=${teamId}`) : 
+      buildApiUrl(`/matches?match_type=${matchMode}`);
+    
+    console.log('API URL:', apiUrl);
+    
+    fetch(apiUrl, {
       credentials: 'include'
     })
       .then(res => res.json())
@@ -550,17 +578,59 @@ export default function WeeklyReport() {
           const key = new Date(match.match_date).toISOString().slice(0, 10);
           if (!(key in dayMap)) return;
           
+          console.log('Processing match:', {
+            match_id: match.id,
+            match_date: match.match_date,
+            winner: match.winner,
+            teams: match.teams,
+            currentTeam
+          });
+          
           // Since backend filters by team ID, all matches returned are for the current team
           // We can determine win/loss by checking if the current team is the winner
           if (currentTeam && currentTeam.trim() !== '') {
             const team = match.teams.find(t => t.team === currentTeam);
+            console.log('Found team in match:', team);
             if (team) {
-              if (team.team === match.winner) dayMap[key].win++;
-              else dayMap[key].lose++;
+              if (team.team === match.winner) {
+                dayMap[key].win++;
+                console.log(`Win recorded for ${key}`);
+              } else {
+                dayMap[key].lose++;
+                console.log(`Loss recorded for ${key}`);
+              }
+            } else {
+              // Try case-insensitive matching as fallback
+              const teamCaseInsensitive = match.teams.find(t => 
+                t.team && t.team.toLowerCase() === currentTeam.toLowerCase()
+              );
+              if (teamCaseInsensitive) {
+                console.log('Found team with case-insensitive matching:', teamCaseInsensitive);
+                if (teamCaseInsensitive.team === match.winner) {
+                  dayMap[key].win++;
+                  console.log(`Win recorded for ${key} (case-insensitive match)`);
+                } else {
+                  dayMap[key].lose++;
+                  console.log(`Loss recorded for ${key} (case-insensitive match)`);
+                }
+              } else {
+                console.warn(`No team found for current team "${currentTeam}" in match ${match.id}. Available teams:`, match.teams.map(t => t.team));
+                // Since backend filters by team_id, assume this is our team's match
+                // Check if any team in this match is the winner (this is a fallback)
+                const ourTeam = match.teams.find(t => t.team === match.winner);
+                if (ourTeam) {
+                  dayMap[key].win++;
+                  console.log(`Fallback win recorded for ${key} (winner team)`);
+                } else {
+                  dayMap[key].lose++;
+                  console.log(`Fallback loss recorded for ${key} (not winner team)`);
+                }
+              }
             }
           } else {
             // Fallback: if no team name, just count as a match
             dayMap[key].win++;
+            console.log(`Fallback win recorded for ${key}`);
           }
         });
         

@@ -13,9 +13,11 @@ export default function DraftSlots({
   handleDraftSlotClick, 
   handleDraftSlotEdit, 
   isCompleteDraft = false,
+  isEditing = false,
   customLaneAssignments,
   onLaneSwap,
-  heroList = []
+  heroList = [],
+  timerEnabled = false
 }) {
   // Use custom lane assignments if available, otherwise fall back to fixed lane order
   const laneOrder = customLaneAssignments?.[team] || ['exp', 'jungler', 'mid', 'gold', 'roam'];
@@ -33,8 +35,26 @@ export default function DraftSlots({
   // turn slot value into a hero object (or null)
   const toHero = (slotVal) => {
     if (!slotVal) return null;
-    // If it's already an object with hero properties, return it
-    if (typeof slotVal === 'object' && slotVal.name) return slotVal;
+    
+    // Handle different object formats for banned heroes
+    if (typeof slotVal === 'object' && slotVal !== null) {
+      // Extract hero name from various possible properties
+      const heroName = slotVal.hero || slotVal.name || slotVal.heroName || null;
+      
+      if (heroName) {
+        // Find the hero object from the heroList
+        const heroFromList = heroList.find(hero => hero.name === heroName);
+        if (heroFromList) {
+          return heroFromList;
+        }
+        // Fallback: return a simple object with the name
+        return { name: heroName, image: '', role: '' };
+      }
+      
+      // If it's already an object with hero properties, return it
+      if (slotVal.name) return slotVal;
+    }
+    
     // If it's a string, find the hero object from the heroList
     if (typeof slotVal === 'string') {
       const heroFromList = heroList.find(hero => hero.name === slotVal);
@@ -44,6 +64,7 @@ export default function DraftSlots({
       // Fallback: return a simple object with the name
       return { name: slotVal, image: '', role: '' };
     }
+    
     return slotVal;
   };
   
@@ -90,8 +111,8 @@ export default function DraftSlots({
             
             {/* Hero icon */}
             <div
-              className={`relative ${size} rounded-full bg-white/90 flex items-center justify-center overflow-hidden ${outline} ${isCompleteDraft ? 'hover:scale-105 transition-transform duration-200 cursor-pointer group' : ''}`}
-              onClick={isCompleteDraft ? () => {
+              className={`relative ${size} rounded-full bg-white/90 flex items-center justify-center overflow-hidden ${outline} ${hero ? 'hover:scale-105 transition-transform duration-200 cursor-pointer group' : ''}`}
+              onClick={hero ? () => {
                 if (handleDraftSlotClick) {
                   if (type === 'ban' && team === 'red') {
                     // For red team bans, use the reversed index
@@ -102,7 +123,7 @@ export default function DraftSlots({
                   }
                 }
               } : undefined}
-              title={isCompleteDraft ? 'Click to edit hero' : ''}
+              title={hero ? 'Click to edit hero' : ''}
             >
               {hero ? (
                 <>

@@ -135,6 +135,15 @@ const Header = ({
           ))}
         </ul>
 
+        {/* Hero Tier List Button */}
+        <button
+          onClick={() => handleHeaderNavigation('/tier-list')}
+          className="hidden md:flex items-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-200 mr-4"
+        >
+          <span className="text-lg">🏆</span>
+          <span className="text-sm">TIER LIST</span>
+        </button>
+
         <div onClick={() => setShowBurgerModal(true)} className="md:hidden cursor-pointer ">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
@@ -256,6 +265,7 @@ const Header = ({
           </div>
         )}
       </div>
+
     </header>
   );
 };

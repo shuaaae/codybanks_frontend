@@ -179,8 +179,8 @@ export default function ScalingChart({
     return { blue: blueScaling, red: redScaling };
   }, [blueTeamPicks, redTeamPicks, intervals]);
 
-  // Chart dimensions and scaling - wider chart with minimal padding
-  const chartWidth = 500;
+  // Chart dimensions and scaling - responsive chart with minimal padding
+  const chartWidth = 500; // Base width, will be scaled by CSS
   const chartHeight = 220;
   const padding = { top: 10, right: 15, bottom: 20, left: 35 };
   const plotWidth = chartWidth - padding.left - padding.right;
@@ -207,7 +207,7 @@ export default function ScalingChart({
   const redPath = generatePath(teamScalingData.red);
 
   return (
-    <div className="bg-gray-800 rounded-lg p-2" style={{ width: chartWidth + 16, margin: '0 auto' }}>
+    <div className="bg-gray-800 rounded-lg p-2 w-full max-w-2xl mx-auto">
       <style jsx>{`
         @keyframes fadeInUp {
           from {
@@ -222,6 +222,15 @@ export default function ScalingChart({
         .tooltip-enter {
           animation: fadeInUp 0.2s ease-out;
         }
+        .scaling-chart {
+          width: 100%;
+          max-width: 500px;
+          height: auto;
+        }
+        .scaling-chart svg {
+          width: 100%;
+          height: auto;
+        }
       `}</style>
       
       <h3 className="text-lg font-semibold text-white mb-1 text-center">
@@ -231,8 +240,8 @@ export default function ScalingChart({
         TEAM WINRATE NORMALIZED
       </p>
       
-      <div className="relative" style={{ width: chartWidth, margin: '0 auto' }}>
-        <svg width={chartWidth} height={chartHeight} className="h-auto">
+      <div className="relative scaling-chart">
+        <svg width={chartWidth} height={chartHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="w-full h-auto">
           {/* Grid lines */}
           {[42, 46, 50, 54, 58].map(value => (
             <g key={value}>

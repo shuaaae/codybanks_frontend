@@ -26,6 +26,7 @@ export default function MockDraft() {
   const [currentStep, setCurrentStep] = useState(-1); // -1 means not started
   const [timer, setTimer] = useState(50);
   const [timerActive, setTimerActive] = useState(false);
+  const [timerEnabled, setTimerEnabled] = useState(false); // Toggle for Set-Time/No-Time
   const [bans, setBans] = useState({ blue: Array(5).fill(null), red: Array(5).fill(null) });
   const [picks, setPicks] = useState({ blue: Array(5).fill(null), red: Array(5).fill(null) });
   const [draftFinished, setDraftFinished] = useState(false);
@@ -62,11 +63,24 @@ export default function MockDraft() {
   // User session timeout: 30 minutes
   useSessionTimeout(30, 'currentUser', '/');
 
+  // Get team-specific draft data key
+  const getTeamDraftKey = (teamId) => `mockDraftData_${teamId}`;
+
   // Load saved draft data on component mount
   useEffect(() => {
     const loadSavedDraft = () => {
       try {
-        const savedDraft = localStorage.getItem('mockDraftData');
+        // Get current team from localStorage
+        const latestTeam = localStorage.getItem('latestTeam');
+        if (!latestTeam) {
+          console.log('ℹ️ No team selected, not loading draft data');
+          return;
+        }
+
+        const teamData = JSON.parse(latestTeam);
+        const teamDraftKey = getTeamDraftKey(teamData.id);
+        const savedDraft = localStorage.getItem(teamDraftKey);
+        
         if (savedDraft) {
           const draftData = JSON.parse(savedDraft);
           
@@ -81,9 +95,9 @@ export default function MockDraft() {
           // Restore completed drafts regardless of whether they've been consumed
           if (isCompleted) {
             if (draftData.consumed) {
-              console.log('🔄 Restoring previously consumed draft from localStorage');
+              console.log(`🔄 Restoring previously consumed draft from localStorage for team: ${teamData.teamName || teamData.name}`);
             } else {
-              console.log('🔄 Restoring completed draft from localStorage');
+              console.log(`🔄 Restoring completed draft from localStorage for team: ${teamData.teamName || teamData.name}`);
             }
             
             // Restore all draft state
@@ -107,7 +121,7 @@ export default function MockDraft() {
             setCurrentStep(19); // Set to final step (5 bans + 10 picks + 4 additional steps)
             setDraftRestored(true);
             
-            console.log('✅ Completed draft restored successfully');
+            console.log(`✅ Completed draft restored successfully for team: ${teamData.teamName || teamData.name}`);
             
             // Hide the restoration message after 3 seconds
             setTimeout(() => {
@@ -116,6 +130,8 @@ export default function MockDraft() {
           } else {
             console.log('📝 Incomplete draft found, not restoring');
           }
+        } else {
+          console.log(`ℹ️ No saved draft data found for team: ${teamData.teamName || teamData.name}`);
         }
       } catch (error) {
         console.error('❌ Error loading saved draft:', error);
@@ -128,6 +144,16 @@ export default function MockDraft() {
   // Save draft data whenever it changes (but only if draft is completed)
   useEffect(() => {
     if (draftFinished) {
+      // Get current team from localStorage
+      const latestTeam = localStorage.getItem('latestTeam');
+      if (!latestTeam) {
+        console.log('⚠️ No team selected, cannot save draft data');
+        return;
+      }
+
+      const teamData = JSON.parse(latestTeam);
+      const teamDraftKey = getTeamDraftKey(teamData.id);
+      
       const draftData = {
         blueTeamName: blueTeamName || 'Blue Team',
         redTeamName: redTeamName || 'Red Team',
@@ -139,8 +165,8 @@ export default function MockDraft() {
         timestamp: Date.now()
       };
       
-      localStorage.setItem('mockDraftData', JSON.stringify(draftData));
-      console.log('💾 Draft data saved to localStorage');
+      localStorage.setItem(teamDraftKey, JSON.stringify(draftData));
+      console.log(`💾 Draft data saved to localStorage for team: ${teamData.teamName || teamData.name}`);
     }
   }, [draftFinished, picks, bans, blueTeamName, redTeamName, customLaneAssignments]);
 
@@ -191,6 +217,33 @@ export default function MockDraft() {
         console.error('Error setting team as active:', error);
       });
     }
+  }, []);
+
+  // Clear draft data when team changes
+  useEffect(() => {
+    const handleTeamChange = () => {
+      // Reset draft state when team changes
+      setCurrentStep(-1);
+      setTimer(50);
+      setTimerActive(false);
+      setBans({ blue: Array(5).fill(null), red: Array(5).fill(null) });
+      setPicks({ blue: Array(5).fill(null), red: Array(5).fill(null) });
+      setDraftFinished(false);
+      setBlueTeamName('');
+      setRedTeamName('');
+      setCustomLaneAssignments({
+        blue: ['exp', 'jungler', 'mid', 'gold', 'roam'],
+        red: ['exp', 'jungler', 'mid', 'gold', 'roam']
+      });
+      console.log('🔄 Draft state cleared due to team change');
+    };
+
+    // Listen for team changes
+    window.addEventListener('teamChanged', handleTeamChange);
+    
+    return () => {
+      window.removeEventListener('teamChanged', handleTeamChange);
+    };
   }, []);
 
   // Clear active team when leaving MockDraft
@@ -397,9 +450,18 @@ export default function MockDraft() {
       red: ['exp', 'jungler', 'mid', 'gold', 'roam']
     });
     
-    // Clear saved draft data from localStorage
-    localStorage.removeItem('mockDraftData');
-    console.log('🗑️ Draft data cleared from localStorage');
+    // Clear saved draft data from localStorage for current team
+    const latestTeam = localStorage.getItem('latestTeam');
+    if (latestTeam) {
+      const teamData = JSON.parse(latestTeam);
+      const teamDraftKey = getTeamDraftKey(teamData.id);
+      localStorage.removeItem(teamDraftKey);
+      console.log(`🗑️ Draft data cleared from localStorage for team: ${teamData.teamName || teamData.name}`);
+    } else {
+      // Fallback: clear old global key if no team is selected
+      localStorage.removeItem('mockDraftData');
+      console.log('🗑️ Global draft data cleared from localStorage');
+    }
     
     // Close draft analysis modal if it's open
     setShowDraftAnalysis(false);
@@ -505,6 +567,7 @@ export default function MockDraft() {
   useEffect(() => {
     if (draftFinished) return;
     if (!timerActive || currentStep === -1) return;
+    if (!timerEnabled) return; // Only run timer when timer is enabled
     if (timer === 0) {
       // Auto-advance step
       if (currentStep + 1 < draftSteps.length) {
@@ -518,7 +581,7 @@ export default function MockDraft() {
     }
     const id = setTimeout(() => setTimer(timer - 1), 1000);
     return () => clearTimeout(id);
-  }, [timerActive, timer, currentStep, draftFinished]);
+  }, [timerActive, timer, currentStep, draftFinished, timerEnabled]);
 
   // Advance step after pick/ban
   function handleHeroSelect(hero) {
@@ -736,10 +799,15 @@ export default function MockDraft() {
         return;
       }
       
+      // Get current team name for filtering
+      const latestTeam = localStorage.getItem('latestTeam');
+      const currentTeamName = latestTeam ? JSON.parse(latestTeam).teamName || JSON.parse(latestTeam).name : null;
+
       // Prepare draft data for database
       const draftData = {
         blue_team_name: blueTeamName || 'Blue Team',
         red_team_name: redTeamName || 'Red Team',
+        team_name: currentTeamName, // Add current team name for filtering
         blue_picks: picks.blue,
         red_picks: picks.red,
         blue_bans: bans.blue,
@@ -794,23 +862,10 @@ export default function MockDraft() {
     setShowDraftAnalysis(true);
   };
 
-  // Handle navigation to complete draft with current draft data
+  // Handle navigation to complete draft - no data sharing
   const handleCompleteDraft = () => {
-    // Store the current draft data in localStorage so it can be used in the complete draft
-    const draftData = {
-      blueTeamName: blueTeamName || 'Blue Team',
-      redTeamName: redTeamName || 'Red Team',
-      bluePicks: picks.blue,
-      redPicks: picks.red,
-      blueBans: bans.blue,
-      redBans: bans.red,
-      customLaneAssignments: customLaneAssignments,
-      timestamp: Date.now()
-    };
-    
-    localStorage.setItem('mockDraftData', JSON.stringify(draftData));
-    
     // Navigate to homepage where the complete draft can be accessed
+    // Complete draft will start fresh and independently
     navigate('/');
   };
 
@@ -865,6 +920,7 @@ export default function MockDraft() {
             onLaneSwap={handleLaneSwap}
             areAllLanesAssigned={areAllLanesAssigned()}
             areLaneAssignmentsValid={areLaneAssignmentsValid()}
+            timerEnabled={timerEnabled}
           />
           <DraftControls
             timerActive={timerActive}
@@ -883,6 +939,8 @@ export default function MockDraft() {
             onShowDraftHistory={() => setShowDraftHistory(true)}
             onShowDraftAnalysis={handleShowDraftAnalysis}
             onCompleteDraft={handleCompleteDraft}
+            timerEnabled={timerEnabled}
+            setTimerEnabled={setTimerEnabled}
           />
         </div>
       </div>
@@ -972,7 +1030,10 @@ export default function MockDraft() {
             }
           }}
         >
-          <div className="modal-box w-full max-w-4xl bg-[#23232a] rounded-2xl shadow-2xl p-8">
+          <div 
+            className="modal-box w-full max-w-4xl bg-[#23232a] rounded-2xl shadow-2xl p-8"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="text-xl font-bold text-white mb-4">
               Select Hero for {selectedDraftSlot.team === 'blue' ? 'Blue' : 'Red'} Team {selectedDraftSlot.type === 'ban' ? 'Ban' : 'Pick'} (Slot {selectedDraftSlot.index + 1})
             </h3>
@@ -985,8 +1046,16 @@ export default function MockDraft() {
                   type="text"
                   placeholder="Search heroes..."
                   value={draftSlotSearch}
-                  onChange={(e) => setDraftSlotSearch(e.target.value)}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    const value = e.target.value;
+                    console.log('MockDraft - Search input changed:', value);
+                    setDraftSlotSearch(value);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  onFocus={(e) => e.stopPropagation()}
                   className="w-full px-3 py-2 pl-10 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoComplete="off"
                 />
                 <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -996,28 +1065,62 @@ export default function MockDraft() {
             
             {/* Filtered Hero Grid */}
             <div className="grid grid-cols-8 gap-2 mb-6 max-h-[60vh] overflow-y-auto">
-              {heroList
-                .filter(hero => {
+              {(() => {
+                // Remove duplicates from heroList first
+                const uniqueHeroes = Array.from(new Map(heroList.map(hero => [hero.name, hero])).values());
+                
+                const filteredHeroes = uniqueHeroes.filter(hero => {
                   // Filter by search term
                   if (draftSlotSearch && !hero.name.toLowerCase().includes(draftSlotSearch.toLowerCase())) {
                     return false;
                   }
-                  
-                  // Filter out already banned/picked heroes
-                  const bannedAndPickedHeroes = getAllBannedAndPickedHeroes();
-                  if (bannedAndPickedHeroes.some(n => n?.toLowerCase() === hero.name.toLowerCase())) {
-                    return false;
-                  }
-                  
                   return true;
-                })
-                .map(hero => (
-                  <button
-                    key={hero.name}
-                    type="button"
-                    className="flex flex-col items-center justify-center p-3 rounded-lg border-2 border-transparent hover:border-blue-400 hover:bg-blue-900/20 text-white transition-all"
-                    onClick={() => handleDraftSlotEdit(hero)}
-                  >
+                });
+                
+                console.log('MockDraft - Search results:', {
+                  searchTerm: draftSlotSearch,
+                  totalHeroes: heroList.length,
+                  uniqueHeroes: uniqueHeroes.length,
+                  filteredHeroes: filteredHeroes.length,
+                  filteredHeroNames: filteredHeroes.map(h => h.name)
+                });
+                
+                return filteredHeroes;
+              })()
+                .map(hero => {
+                  // Check if hero is already banned/picked (but allow current slot hero)
+                  const bannedAndPickedHeroes = getAllBannedAndPickedHeroes();
+                  const currentSlotHero = selectedDraftSlot ? 
+                    (selectedDraftSlot.type === 'ban' ? 
+                      bans[selectedDraftSlot.team]?.[selectedDraftSlot.index] : 
+                      picks[selectedDraftSlot.team]?.[selectedDraftSlot.index]
+                    ) : null;
+                  
+                  const currentHeroName = currentSlotHero?.hero?.name ?? currentSlotHero?.name ?? currentSlotHero;
+                  const isAlreadyUsed = bannedAndPickedHeroes.some(n => n?.toLowerCase() === hero.name.toLowerCase()) && 
+                    hero.name.toLowerCase() !== currentHeroName?.toLowerCase();
+                  
+                  console.log(`MockDraft - Hero ${hero.name} status:`, {
+                    heroName: hero.name,
+                    bannedAndPickedHeroes: bannedAndPickedHeroes,
+                    currentHeroName: currentHeroName,
+                    isAlreadyUsed: isAlreadyUsed,
+                    currentSlot: selectedDraftSlot
+                  });
+                  
+                  return (
+                    <button
+                      key={hero.name}
+                      type="button"
+                      className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all ${
+                        isAlreadyUsed 
+                          ? 'border-red-600 bg-red-900/30 text-red-400 cursor-not-allowed opacity-60' 
+                          : 'border-transparent hover:border-blue-400 hover:bg-blue-900/20 text-white'
+                      }`}
+                      onClick={() => !isAlreadyUsed && handleDraftSlotEdit(hero)}
+                      disabled={isAlreadyUsed}
+                      title={isAlreadyUsed ? `${hero.name} is already banned/picked` : hero.name}
+                    >
                     <div className="w-16 h-16 rounded-full shadow-lg overflow-hidden flex items-center justify-center mb-2 bg-gradient-to-b from-blue-900 to-blue-700">
                       <img
                         src={`${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/hero-image/${hero.role?.trim().toLowerCase()}/${encodeURIComponent(hero.image)}`}
@@ -1033,8 +1136,9 @@ export default function MockDraft() {
                     <span className="text-sm font-semibold text-center w-20 truncate">
                       {hero.name}
                     </span>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
             </div>
 
             {/* Close Button */}

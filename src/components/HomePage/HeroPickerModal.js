@@ -45,6 +45,7 @@ export default function HeroPickerModal({
       setLocalSelected(selected);
       setSearchTerm(''); // Reset search when modal opens
       setShowFlexPicks(false); // Reset flex picks state
+      console.log('HeroPickerModal - Modal opened, resetting search term');
       // For picking, default to lane type (e.g., "Fighter" for Exp Lane)
       // For banning, default to "All"
       if (heroPickerMode === 'pick' && filterType) {
@@ -84,10 +85,20 @@ export default function HeroPickerModal({
   }
 
   // Apply search filter
+  console.log('Current searchTerm:', searchTerm);
   if (searchTerm.trim()) {
-    filteredHeroes = filteredHeroes.filter(hero => 
-      hero.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const searchLower = searchTerm.toLowerCase().trim();
+    console.log('Searching for:', searchLower);
+    console.log('Heroes before filter:', filteredHeroes.length);
+    filteredHeroes = filteredHeroes.filter(hero => {
+      const heroName = hero.name.toLowerCase();
+      const matches = heroName.includes(searchLower);
+      console.log(`Hero: ${hero.name}, matches: ${matches}`);
+      return matches;
+    });
+    console.log('Heroes after filter:', filteredHeroes.length);
+  } else {
+    console.log('No search term, showing all heroes');
   }
 
   // Get all unavailable heroes (banned or picked)
@@ -186,9 +197,16 @@ export default function HeroPickerModal({
               type="text"
               placeholder="Search heroes..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                e.stopPropagation();
+                const value = e.target.value;
+                console.log('HeroPickerModal - Search input changed:', value);
+                setSearchTerm(value);
+              }}
               onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.stopPropagation()}
               className="px-4 py-1 bg-[#181A20] text-white rounded-full border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent pl-8 pr-3 w-48"
+              autoComplete="off"
             />
             <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
               <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

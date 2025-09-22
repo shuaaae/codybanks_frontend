@@ -59,6 +59,41 @@ function PlayersStatistic() {
   // User session timeout: 30 minutes
   useSessionTimeout(30, 'currentUser', '/');
 
+  // Listen for match updates to refresh player statistics
+  useEffect(() => {
+    const handleMatchUpdate = (event) => {
+      console.log('🔄 Match updated, refreshing player statistics...', event.detail);
+      // Clear cached stats to force recalculation
+      setAllPlayerStats({});
+      setAllPlayerH2HStats({});
+      setHeroStats([]);
+      setHeroH2HStats([]);
+      
+      // Clear localStorage cache
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('heroStats_') || key.startsWith('h2hStats_')) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      // Clear window cache
+      if (window.playerStatsCache) {
+        window.playerStatsCache = {};
+      }
+      if (window.playerH2HStatsCache) {
+        window.playerH2HStatsCache = {};
+      }
+      
+      console.log('✅ Player statistics cache cleared, will recalculate on next view');
+    };
+
+    window.addEventListener('matchUpdated', handleMatchUpdate);
+    
+    return () => {
+      window.removeEventListener('matchUpdated', handleMatchUpdate);
+    };
+  }, []);
+
   // Match mode state - load from localStorage
   const [matchMode, setMatchMode] = useState(() => {
     const savedMode = localStorage.getItem('selectedMatchMode');
@@ -96,42 +131,81 @@ function PlayersStatistic() {
         }
         
         const matchWinner = match.winner;
+        console.log(`🔍 Processing match ${match.id}: winner="${matchWinner}", currentTeam="${currentTeam}"`);
         
-        // Process each team in the match
-        match.teams.forEach(team => {
-          const isWinningTeam = team.team === matchWinner;
-          
-          // Count picks
-          const allPicks = [
-            ...(team.picks1 || []),
-            ...(team.picks2 || [])
-          ];
-          
-          allPicks.forEach(pick => {
-            // Check if this pick belongs to the current player
-            const pickPlayerName = pick.player?.name || pick.player_name || pick.player;
-            if (pickPlayerName && pickPlayerName.toLowerCase() === player.name.toLowerCase()) {
-              const heroName = pick.hero || pick.name;
-              if (heroName) {
-                if (!heroStats[heroName]) {
-                  heroStats[heroName] = {
-                    hero: heroName,
-                    win: 0,
-                    lose: 0,
-                    total: 0,
-                    winrate: 0
-                  };
-                }
-                
-                heroStats[heroName].total++;
-                if (isWinningTeam) {
-                  heroStats[heroName].win++;
-                } else {
-                  heroStats[heroName].lose++;
-                }
+        // Find our team in this match
+        let ourTeam = null;
+        let isWinningTeam = false;
+        
+        // First try exact match
+        ourTeam = match.teams.find(team => team.team === currentTeam);
+        if (ourTeam) {
+          isWinningTeam = ourTeam.team === matchWinner;
+          console.log(`✅ Found exact team match: ${ourTeam.team} === ${matchWinner} = ${isWinningTeam}`);
+        } else {
+          // Try case-insensitive matching as fallback
+          ourTeam = match.teams.find(team => 
+            team.team && team.team.toLowerCase() === currentTeam.toLowerCase()
+          );
+          if (ourTeam) {
+            isWinningTeam = ourTeam.team === matchWinner;
+            console.log(`✅ Found case-insensitive team match: ${ourTeam.team} === ${matchWinner} = ${isWinningTeam}`);
+          } else {
+            console.warn(`⚠️ No team found for current team "${currentTeam}" in match ${match.id}. Available teams:`, match.teams.map(t => t.team));
+            // Since backend filters by team_id, assume this is our team's match
+            // Check if any team in this match is the winner (this is a fallback)
+            ourTeam = match.teams.find(team => team.team === matchWinner);
+            if (ourTeam) {
+              isWinningTeam = true;
+              console.log(`✅ Fallback: assuming winner team is ours: ${ourTeam.team}`);
+            } else {
+              console.warn(`⚠️ No winner team found in match ${match.id}`);
+              return; // Skip this match if we can't determine our team
+            }
+          }
+        }
+        
+        if (!ourTeam) {
+          console.warn(`⚠️ Could not find our team in match ${match.id}`);
+          return;
+        }
+        
+        // Count picks for our team only
+        const allPicks = [
+          ...(ourTeam.picks1 || []),
+          ...(ourTeam.picks2 || [])
+        ];
+        
+        console.log(`📊 Processing ${allPicks.length} picks for team ${ourTeam.team}, isWinning: ${isWinningTeam}`);
+        
+        allPicks.forEach(pick => {
+          // Check if this pick belongs to the current player
+          const pickPlayerName = pick.player?.name || pick.player_name || pick.player;
+          if (pickPlayerName && typeof pickPlayerName === 'string' && 
+              player.name && typeof player.name === 'string' && 
+              pickPlayerName.toLowerCase() === player.name.toLowerCase()) {
+            const heroName = pick.hero || pick.name;
+            if (heroName) {
+              if (!heroStats[heroName]) {
+                heroStats[heroName] = {
+                  hero: heroName,
+                  win: 0,
+                  lose: 0,
+                  total: 0,
+                  winrate: 0
+                };
+              }
+              
+              heroStats[heroName].total++;
+              if (isWinningTeam) {
+                heroStats[heroName].win++;
+                console.log(`🎉 WIN recorded for ${player.name} with ${heroName} in match ${match.id}`);
+              } else {
+                heroStats[heroName].lose++;
+                console.log(`😞 LOSS recorded for ${player.name} with ${heroName} in match ${match.id}`);
               }
             }
-          });
+          }
         });
       });
 
@@ -191,22 +265,36 @@ function PlayersStatistic() {
         }
         
         const matchWinner = match.winner;
+        console.log(`🔍 H2H Processing match ${match.id}: winner="${matchWinner}", currentTeam="${currentTeam}"`);
         
-        // Find our team and enemy team
+        // Find our team and enemy team with robust matching
         let ourTeam = null;
         let enemyTeam = null;
         
-        match.teams.forEach(team => {
-          if (team.team === currentTeam) {
-            ourTeam = team;
-          } else {
-            enemyTeam = team;
-          }
-        });
+        // First try exact match for our team
+        ourTeam = match.teams.find(team => team.team === currentTeam);
+        if (!ourTeam) {
+          // Try case-insensitive matching as fallback
+          ourTeam = match.teams.find(team => 
+            team.team && team.team.toLowerCase() === currentTeam.toLowerCase()
+          );
+        }
         
-        if (!ourTeam || !enemyTeam) return;
+        if (!ourTeam) {
+          console.warn(`⚠️ No team found for current team "${currentTeam}" in H2H match ${match.id}. Available teams:`, match.teams.map(t => t.team));
+          return;
+        }
+        
+        // Find enemy team (any team that's not ours)
+        enemyTeam = match.teams.find(team => team.team !== ourTeam.team);
+        
+        if (!enemyTeam) {
+          console.warn(`⚠️ No enemy team found in H2H match ${match.id}`);
+          return;
+        }
         
         const isWinningTeam = ourTeam.team === matchWinner;
+        console.log(`✅ H2H Team match: ourTeam="${ourTeam.team}", enemyTeam="${enemyTeam.team}", isWinning: ${isWinningTeam}`);
         
         // Get all picks for both teams
         const ourPicks = [
@@ -222,7 +310,9 @@ function PlayersStatistic() {
         // Find our player's pick
         const ourPlayerPick = ourPicks.find(pick => {
           const pickPlayerName = pick.player?.name || pick.player_name || pick.player;
-          return pickPlayerName && pickPlayerName.toLowerCase() === player.name.toLowerCase();
+          return pickPlayerName && typeof pickPlayerName === 'string' && 
+                 player.name && typeof player.name === 'string' && 
+                 pickPlayerName.toLowerCase() === player.name.toLowerCase();
         });
         
         if (ourPlayerPick) {
@@ -245,7 +335,7 @@ function PlayersStatistic() {
           // First, try to find exact lane match
           enemyPlayerPick = enemyPicks.find(enemyPick => {
             const enemyLane = enemyPick.lane || 'unknown';
-            const isMatch = enemyLane && enemyLane.toLowerCase() === ourPlayerLane.toLowerCase();
+            const isMatch = enemyLane && typeof enemyLane === 'string' && enemyLane.toLowerCase() === ourPlayerLane.toLowerCase();
             if (isMatch) {
               console.log(`✅ Found exact lane match: ${enemyPick.hero || enemyPick.name} (${enemyLane}) matches ${ourPlayerLane}`);
             }
@@ -269,7 +359,7 @@ function PlayersStatistic() {
             console.log(`🔍 Looking for lanes: ${ourLaneVariations.join(', ')}`);
             
             enemyPlayerPick = enemyPicks.find(enemyPick => {
-              const enemyLane = (enemyPick.lane || 'unknown').toLowerCase();
+              const enemyLane = typeof (enemyPick.lane || 'unknown') === 'string' ? (enemyPick.lane || 'unknown').toLowerCase() : 'unknown';
               console.log(`🔍 Checking enemy lane: ${enemyLane} against variations: ${ourLaneVariations.join(', ')}`);
               
               // Check if enemy lane matches any of our lane variations
@@ -1109,7 +1199,7 @@ function PlayersStatistic() {
       }
     });
     
-    // Only attempt to fetch photos for players that don't have cached photos
+    // Only attempt to fetch photos for players that have photos in the database
     // This prevents unnecessary API calls and console errors
     const imagePromises = playersArray.map(async (player) => {
       if (!player.name) return;
@@ -1118,6 +1208,13 @@ function PlayersStatistic() {
       
       // Skip if already cached with a real photo or if we've tried recently
       if (newImageCache[playerIdentifier] && newImageCache[playerIdentifier] !== defaultPlayer) return;
+      
+      // Only fetch photo if player has a photo in the database
+      if (!player.photo) {
+        // Player doesn't have a photo, use default
+        newImageCache[playerIdentifier] = defaultPlayer;
+        return;
+      }
       
       // Check if we've tried to fetch this player's photo recently (within last 5 minutes)
       const lastFetchKey = `lastPhotoFetch_${playerIdentifier}`;

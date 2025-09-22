@@ -21,23 +21,39 @@ export default function ProgressionChart({ progressionData, loading, dateRange, 
   const [currentPath, setCurrentPath] = useState([]);
   const [selectedColor, setSelectedColor] = useState('#ff6b35');
 
+  // Set canvas size dynamically
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const resizeCanvas = () => {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    };
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, []);
+
   // Drawing functions
   const getCanvasCoordinates = (e) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
     
     // Handle touch events
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     
-    return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY
-    };
+    // Calculate coordinates relative to canvas size
+    const x = ((clientX - rect.left) / rect.width) * canvas.width;
+    const y = ((clientY - rect.top) / rect.height) * canvas.height;
+    
+    return { x, y };
   };
 
   const startDrawing = (e) => {
@@ -195,7 +211,7 @@ export default function ProgressionChart({ progressionData, loading, dateRange, 
       )}
       
       {/* Chart Container with Drawing Overlay */}
-      <div className="relative">
+      <div className="relative w-full h-[350px] min-h-[300px] max-h-[500px]">
         <Line
         data={{
           labels: generateDayLabels(),
@@ -209,11 +225,13 @@ export default function ProgressionChart({ progressionData, loading, dateRange, 
               pointRadius: isDrawingMode ? 0 : 5,
               pointBackgroundColor: isDrawingMode ? 'transparent' : '#facc15',
               fill: false,
+              spanGaps: true, // Connect points even when there are gaps in data
             },
           ],
         }}
         options={{
           responsive: true,
+          maintainAspectRatio: false,
           plugins: {
             legend: { display: false },
             tooltip: {
@@ -269,8 +287,6 @@ export default function ProgressionChart({ progressionData, loading, dateRange, 
             }
           }
         }}
-        height={350}
-        width={900}
         ref={chartRef}
       />
       
@@ -278,9 +294,7 @@ export default function ProgressionChart({ progressionData, loading, dateRange, 
       {isDrawingMode && (
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 pointer-events-auto cursor-crosshair"
-          width={900}
-          height={350}
+          className="absolute inset-0 pointer-events-auto cursor-crosshair w-full h-full"
           onMouseDown={startDrawing}
           onMouseMove={draw}
           onMouseUp={stopDrawing}

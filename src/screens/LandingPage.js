@@ -17,6 +17,7 @@ import {
   ErrorModal
 } from '../components/LandingPage';
 import LoginSuccessModal from '../components/LandingPage/LoginSuccessModal';
+import ForgotPasswordModal from '../components/LandingPage/ForgotPasswordModal';
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -26,6 +27,7 @@ export default function LandingPage() {
   const [showTeamPickerModal, setShowTeamPickerModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showSignupModal, setShowSignupModal] = useState(false);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [teamToDelete, setTeamToDelete] = useState(null);
   const [isDeletingTeam, setIsDeletingTeam] = useState(false);
@@ -208,6 +210,34 @@ export default function LandingPage() {
     setLoginPassword('');
     setLoginError('');
     setShowPassword(false);
+  };
+
+  const handleForgotPassword = () => {
+    setShowLoginModal(false);
+    setShowForgotPasswordModal(true);
+  };
+
+  const handleRequestPasswordReset = async (email) => {
+    try {
+      const response = await fetch(buildApiUrl('/auth/forgot-password'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to send password reset request');
+      }
+
+      // Success - the modal will show success message
+      return true;
+    } catch (error) {
+      console.error('Password reset request error:', error);
+      throw error;
+    }
   };
 
   const handleCloseLoginSuccessModal = () => {
@@ -539,6 +569,11 @@ export default function LandingPage() {
         key: 'latestTeam',
         newValue: JSON.stringify(teamData),
         oldValue: null
+      }));
+
+      // Dispatch custom team change event for MockDraft
+      window.dispatchEvent(new CustomEvent('teamChanged', {
+        detail: { teamData }
       }));
       
       console.log('About to activate team using safelyActivateTeam...');
@@ -1046,12 +1081,19 @@ export default function LandingPage() {
         showPassword={showPassword}
         togglePasswordVisibility={togglePasswordVisibility}
         handleLogin={handleLogin}
+        onForgotPassword={handleForgotPassword}
       />
 
       <LoginSuccessModal
         isOpen={showLoginSuccessModal}
         onClose={handleCloseLoginSuccessModal}
         userName={loggedInUserName}
+      />
+
+      <ForgotPasswordModal
+        showForgotPasswordModal={showForgotPasswordModal}
+        setShowForgotPasswordModal={setShowForgotPasswordModal}
+        onRequestPasswordReset={handleRequestPasswordReset}
       />
 
       <SignupModal
