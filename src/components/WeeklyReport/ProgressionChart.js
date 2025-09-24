@@ -225,7 +225,6 @@ export default function ProgressionChart({ progressionData, loading, dateRange, 
               pointRadius: isDrawingMode ? 0 : 5,
               pointBackgroundColor: isDrawingMode ? 'transparent' : '#facc15',
               fill: false,
-              spanGaps: true, // Connect points even when there are gaps in data
             },
           ],
         }}
