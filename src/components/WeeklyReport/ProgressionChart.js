@@ -13,7 +13,7 @@ const PROGRESSION_LABELS = {
   1: 'VERY POOR PERF.'
 };
 
-export default function ProgressionChart({ progressionData, loading, dateRange, isDrawingMode }) {
+export default function ProgressionChart({ progressionData, loading, isDrawingMode, selectedDates = [] }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -124,24 +124,18 @@ export default function ProgressionChart({ progressionData, loading, dateRange, 
     }
   }, [drawings, currentPath, selectedColor]);
 
-  // Generate date labels from the date range
+  // Generate date labels from the progression data
   const generateDateLabels = () => {
-    if (!dateRange || !dateRange[0]) return progressionData.map((d, i) => `Day ${i + 1}`);
+    if (!progressionData || progressionData.length === 0) return [];
     
-    const startDate = new Date(dateRange[0].startDate);
-    const labels = [];
-    
-    for (let i = 0; i < progressionData.length; i++) {
-      const currentDate = new Date(startDate);
-      currentDate.setDate(startDate.getDate() + i);
-      
-      // Format as "Aug 5", "Aug 6", etc.
-      const month = currentDate.toLocaleDateString('en-US', { month: 'short' });
-      const day = currentDate.getDate();
-      labels.push(`${month} ${day}`);
-    }
-    
-    return labels;
+    // Use the actual dates from progression data
+    return progressionData.map(dataPoint => {
+      // Parse the date from the day field (format: YYYY-MM-DD)
+      const date = new Date(dataPoint.day);
+      const month = date.toLocaleDateString('en-US', { month: 'short' });
+      const day = date.getDate();
+      return `${month} ${day}`;
+    });
   };
 
   // Generate day count labels (Day 1, Day 2, etc.)
@@ -214,7 +208,7 @@ export default function ProgressionChart({ progressionData, loading, dateRange, 
       <div className="relative w-full h-[350px] min-h-[300px] max-h-[500px]">
         <Line
         data={{
-          labels: generateDayLabels(),
+          labels: generateDateLabels(),
           datasets: [
             {
               label: 'Progression',
@@ -225,6 +219,7 @@ export default function ProgressionChart({ progressionData, loading, dateRange, 
               pointRadius: isDrawingMode ? 0 : 5,
               pointBackgroundColor: isDrawingMode ? 'transparent' : '#facc15',
               fill: false,
+              spanGaps: true, // Connect points even with gaps
             },
           ],
         }}

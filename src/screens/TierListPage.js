@@ -346,6 +346,7 @@ const TierListPage = () => {
            currentUser={currentUser}
            onLogout={handleLogout}
            onShowProfile={() => setShowProfileModal(true)}
+           currentMode="scrim"
          />
        </div>
 

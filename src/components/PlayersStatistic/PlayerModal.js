@@ -249,16 +249,16 @@ const PlayerModal = ({
                             <div 
                               className="font-bold px-3 py-1 rounded-full text-sm"
                               style={{
-                                background: row.winrate >= 70 
+                                background: (row.success_rate ?? row.winrate ?? 0) >= 70 
                                   ? 'linear-gradient(90deg, rgba(16, 185, 129, 0.3) 0%, rgba(34, 197, 94, 0.3) 100%)'
-                                  : row.winrate >= 50 
+                                  : (row.success_rate ?? row.winrate ?? 0) >= 50 
                                   ? 'linear-gradient(90deg, rgba(245, 158, 11, 0.3) 0%, rgba(251, 191, 36, 0.3) 100%)'
                                   : 'linear-gradient(90deg, rgba(239, 68, 68, 0.3) 0%, rgba(220, 38, 127, 0.3) 100%)',
-                                color: row.winrate >= 70 ? '#10b981' : row.winrate >= 50 ? '#f59e0b' : '#ef4444',
-                                border: `1px solid ${row.winrate >= 70 ? 'rgba(16, 185, 129, 0.5)' : row.winrate >= 50 ? 'rgba(245, 158, 11, 0.5)' : 'rgba(239, 68, 68, 0.5)'}`
+                                color: (row.success_rate ?? row.winrate ?? 0) >= 70 ? '#10b981' : (row.success_rate ?? row.winrate ?? 0) >= 50 ? '#f59e0b' : '#ef4444',
+                                border: `1px solid ${(row.success_rate ?? row.winrate ?? 0) >= 70 ? 'rgba(16, 185, 129, 0.5)' : (row.success_rate ?? row.winrate ?? 0) >= 50 ? 'rgba(245, 158, 11, 0.5)' : 'rgba(239, 68, 68, 0.5)'}`
                               }}
                             >
-                              {row.winrate}%
+                              {row.success_rate ?? row.winrate ?? 0}%
                             </div>
                           </td>
                         </tr>
@@ -332,7 +332,7 @@ const PlayerModal = ({
                           key={row.player_hero + row.enemy_hero + idx}
                           className="hover:bg-white/5 transition-colors duration-200 border-b border-white/5"
                         >
-                          <td className="px-4 py-3 text-white font-semibold">{row.player_hero}</td>
+                          <td className="px-4 py-3 text-white font-semibold">{row.hero_used || row.player_hero}</td>
                           <td className="px-4 py-3 text-blue-300 font-semibold">{row.enemy_hero}</td>
                           <td className="px-4 py-3 text-emerald-400 text-center font-bold">{row.win}</td>
                           <td className="px-4 py-3 text-red-400 text-center font-bold">{row.lose}</td>
@@ -341,16 +341,16 @@ const PlayerModal = ({
                             <div 
                               className="font-bold px-3 py-1 rounded-full text-sm"
                               style={{
-                                background: row.winrate >= 70 
+                                background: (row.success_rate ?? row.winrate ?? 0) >= 70 
                                   ? 'linear-gradient(90deg, rgba(16, 185, 129, 0.3) 0%, rgba(34, 197, 94, 0.3) 100%)'
-                                  : row.winrate >= 50 
+                                  : (row.success_rate ?? row.winrate ?? 0) >= 50 
                                   ? 'linear-gradient(90deg, rgba(245, 158, 11, 0.3) 0%, rgba(251, 191, 36, 0.3) 100%)'
                                   : 'linear-gradient(90deg, rgba(239, 68, 68, 0.3) 0%, rgba(220, 38, 127, 0.3) 100%)',
-                                color: row.winrate >= 70 ? '#10b981' : row.winrate >= 50 ? '#f59e0b' : '#ef4444',
-                                border: `1px solid ${row.winrate >= 70 ? 'rgba(16, 185, 129, 0.5)' : row.winrate >= 50 ? 'rgba(245, 158, 11, 0.5)' : 'rgba(239, 68, 68, 0.5)'}`
+                                color: (row.success_rate ?? row.winrate ?? 0) >= 70 ? '#10b981' : (row.success_rate ?? row.winrate ?? 0) >= 50 ? '#f59e0b' : '#ef4444',
+                                border: `1px solid ${(row.success_rate ?? row.winrate ?? 0) >= 70 ? 'rgba(16, 185, 129, 0.5)' : (row.success_rate ?? row.winrate ?? 0) >= 50 ? 'rgba(245, 158, 11, 0.5)' : 'rgba(239, 68, 68, 0.5)'}`
                               }}
                             >
-                              {row.winrate}%
+                              {row.success_rate ?? row.winrate ?? 0}%
                             </div>
                           </td>
                         </tr>

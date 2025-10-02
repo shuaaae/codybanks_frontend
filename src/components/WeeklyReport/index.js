@@ -8,3 +8,4 @@ export { default as FullNoteModal } from './FullNoteModal';
 export { default as SuccessModal } from './SuccessModal';
 export { default as ProfileModal } from './ProfileModal'; 
 export { default as ObjectiveStatsModal } from './ObjectiveStatsModal';
+export { default as PickOrderStats } from './PickOrderStats';

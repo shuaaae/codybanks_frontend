@@ -16,7 +16,8 @@ import {
   FullNoteModal,
   SuccessModal,
   ProfileModal,
-  ObjectiveStatsModal
+  ObjectiveStatsModal,
+  PickOrderStats
 } from '../components/WeeklyReport';
 
 function getProgressionScore(win, lose) {
@@ -73,8 +74,13 @@ export default function WeeklyReport() {
   const navigate = useNavigate();
   const [dateRange, setDateRange] = useState(loadDateRangeFromStorage);
   const [showPicker, setShowPicker] = useState(false);
+  const [selectedDates, setSelectedDates] = useState([]);
   const [progressionData, setProgressionData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [pickOrderStats, setPickOrderStats] = useState({
+    firstPick: { wins: 0, losses: 0, winRate: 0 },
+    secondPick: { wins: 0, losses: 0, winRate: 0 }
+  });
   const [notes, setNotes] = useState("");
   const [noteTitle, setNoteTitle] = useState("");
   const [savedNotes, setSavedNotes] = useState([]);
@@ -559,6 +565,26 @@ export default function WeeklyReport() {
         // Since backend now filters by team ID automatically, we only need to filter by date
         const filtered = data.filter(match => {
           const d = new Date(match.match_date);
+          
+          // If we have selectedDates (multi-select mode), only show data for those specific dates
+          if (selectedDates.length > 0) {
+            return selectedDates.some(selectedDate => {
+              // Use local date comparison to avoid timezone issues
+              const selectedYear = selectedDate.getFullYear();
+              const selectedMonth = selectedDate.getMonth();
+              const selectedDay = selectedDate.getDate();
+              
+              const matchYear = d.getFullYear();
+              const matchMonth = d.getMonth();
+              const matchDay = d.getDate();
+              
+              return selectedYear === matchYear && 
+                     selectedMonth === matchMonth && 
+                     selectedDay === matchDay;
+            });
+          }
+          
+          // Otherwise, use the date range filter
           return d >= new Date(startDate) && d <= new Date(endDate);
         });
         
@@ -569,13 +595,33 @@ export default function WeeklyReport() {
         console.log('Current team:', currentTeam);
         
         const dayMap = {};
-        for (let d = new Date(startDate); d <= new Date(endDate); d.setDate(d.getDate() + 1)) {
-          const key = d.toISOString().slice(0, 10);
-          dayMap[key] = { win: 0, lose: 0 };
+        
+        // If we have selectedDates (multi-select mode), only include those specific dates
+        if (selectedDates.length > 0) {
+          selectedDates.forEach(selectedDate => {
+            // Use local date formatting to avoid timezone issues
+            const year = selectedDate.getFullYear();
+            const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+            const day = String(selectedDate.getDate()).padStart(2, '0');
+            const key = `${year}-${month}-${day}`;
+            dayMap[key] = { win: 0, lose: 0 };
+          });
+        } else {
+          // Otherwise, use the date range
+          for (let d = new Date(startDate); d <= new Date(endDate); d.setDate(d.getDate() + 1)) {
+            const key = d.toISOString().slice(0, 10);
+            dayMap[key] = { win: 0, lose: 0 };
+          }
         }
         
         filtered.forEach(match => {
-          const key = new Date(match.match_date).toISOString().slice(0, 10);
+          // Use local date formatting to avoid timezone issues
+          const matchDate = new Date(match.match_date);
+          const year = matchDate.getFullYear();
+          const month = String(matchDate.getMonth() + 1).padStart(2, '0');
+          const day = String(matchDate.getDate()).padStart(2, '0');
+          const key = `${year}-${month}-${day}`;
+          
           if (!(key in dayMap)) return;
           
           console.log('Processing match:', {
@@ -647,8 +693,59 @@ export default function WeeklyReport() {
           };
         });
         
-        console.log('Progression data:', progression);
-        setProgressionData(progression);
+        // The progression data is already filtered by the dayMap generation above
+        const finalProgression = progression;
+        
+        console.log('Progression data:', finalProgression);
+        setProgressionData(finalProgression);
+        
+        // Calculate pick order statistics from ALL matches of current match type (not filtered by date)
+        const pickOrderStats = {
+          firstPick: { wins: 0, losses: 0, winRate: 0 },
+          secondPick: { wins: 0, losses: 0, winRate: 0 }
+        };
+        
+        // Filter matches by current match type (scrim/tournament) to avoid mixing data
+        const matchesByType = data.filter(match => match.match_type === matchMode);
+        
+        matchesByType.forEach(match => {
+          const currentTeam = getCurrentTeam();
+          if (!currentTeam || !match.teams) return;
+          
+          // Find our team in the match
+          const ourTeam = match.teams.find(team => team.team === currentTeam);
+          if (!ourTeam) return;
+          
+          // Determine if we were first pick (blue) or second pick (red)
+          const isFirstPick = ourTeam.team_color === 'blue';
+          const isWinner = ourTeam.team === match.winner;
+          
+          if (isFirstPick) {
+            if (isWinner) {
+              pickOrderStats.firstPick.wins++;
+            } else {
+              pickOrderStats.firstPick.losses++;
+            }
+          } else {
+            if (isWinner) {
+              pickOrderStats.secondPick.wins++;
+            } else {
+              pickOrderStats.secondPick.losses++;
+            }
+          }
+        });
+        
+        // Calculate win rates
+        const firstPickTotal = pickOrderStats.firstPick.wins + pickOrderStats.firstPick.losses;
+        const secondPickTotal = pickOrderStats.secondPick.wins + pickOrderStats.secondPick.losses;
+        
+        pickOrderStats.firstPick.winRate = firstPickTotal > 0 ? 
+          ((pickOrderStats.firstPick.wins / firstPickTotal) * 100).toFixed(1) : 0;
+        pickOrderStats.secondPick.winRate = secondPickTotal > 0 ? 
+          ((pickOrderStats.secondPick.wins / secondPickTotal) * 100).toFixed(1) : 0;
+        
+        console.log(`Pick order stats (${matchMode} matches only):`, pickOrderStats);
+        setPickOrderStats(pickOrderStats);
         // Precompute objective rows for turtle and lord
         const toRows = (arr, type) => arr
           .sort((a,b)=> new Date(a.match_date)-new Date(b.match_date))
@@ -733,7 +830,7 @@ export default function WeeklyReport() {
         console.error('Error fetching matches:', error);
         setLoading(false);
       });
-  }, [startDate, endDate, matchMode]);
+  }, [startDate, endDate, matchMode, selectedDates]);
 
   return (
     <div className="min-h-screen" style={{ background: `linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url(${navbarBg}) center/cover, #181A20` }}>
@@ -756,6 +853,7 @@ export default function WeeklyReport() {
           currentUser={currentUser}
           onLogout={handleLogout}
           onShowProfile={() => setShowProfileModal(true)}
+          currentMode={matchMode}
         />
       </div>
 
@@ -771,6 +869,8 @@ export default function WeeklyReport() {
                   setDateRange={setDateRange}
                   showPicker={showPicker}
                   setShowPicker={setShowPicker}
+                  selectedDates={selectedDates}
+                  setSelectedDates={setSelectedDates}
                 />
                 <div className="flex items-center gap-2">
                   <button
@@ -800,8 +900,8 @@ export default function WeeklyReport() {
               <ProgressionChart 
                 progressionData={progressionData}
                 loading={loading}
-                dateRange={dateRange}
                 isDrawingMode={isDrawingMode}
+                selectedDates={selectedDates}
               />
             </div>
             
@@ -815,17 +915,28 @@ export default function WeeklyReport() {
             />
           </div>
           
-          {/* Saved Notes Display */}
-          <div className="w-full mt-6">
-            <SavedNotesList 
-              savedNotes={savedNotes}
-              sortOrder={sortOrder}
-              setSortOrder={setSortOrder}
-              onDeleteNote={handleDeleteNote}
-              onViewFullNote={handleViewFullNote}
-              formatDate={formatDate}
-              getSortedNotes={getSortedNotes}
-            />
+          {/* Saved Notes Display and Pick Order Statistics */}
+          <div className="w-full mt-6 flex flex-col lg:flex-row gap-6">
+            {/* Saved Notes Display */}
+            <div className="flex-1">
+              <SavedNotesList 
+                savedNotes={savedNotes}
+                sortOrder={sortOrder}
+                setSortOrder={setSortOrder}
+                onDeleteNote={handleDeleteNote}
+                onViewFullNote={handleViewFullNote}
+                formatDate={formatDate}
+                getSortedNotes={getSortedNotes}
+              />
+            </div>
+            
+            {/* Pick Order Statistics */}
+            <div className="flex-1">
+              <PickOrderStats 
+                pickOrderStats={pickOrderStats}
+                loading={loading}
+              />
+            </div>
           </div>
         </div>
       </div>

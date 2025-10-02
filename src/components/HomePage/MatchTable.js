@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FaTrash, FaEdit } from 'react-icons/fa';
 
 // Optimized hero image component
@@ -133,11 +133,15 @@ export default function MatchTable({
   onDeleteMatch, 
   onEditMatch,
   heroMap,
-  setCurrentPage
+  setCurrentPage,
+  totalMatches,
+  isFiltered
 }) {
   // State for tracking which matches should be animated
   const [animatedMatches, setAnimatedMatches] = useState(new Set());
   const [isAnimating, setIsAnimating] = useState(false);
+  const lastMatchesRef = useRef(null);
+  const animationTimeoutsRef = useRef([]);
 
   // Debug: Log matches data when component receives it
   React.useEffect(() => {
@@ -162,28 +166,54 @@ export default function MatchTable({
     }
   }, [matches]);
 
-  // Animation effect when matches change
+  // Animation effect when matches change - only animate on significant changes
   useEffect(() => {
+    // Clear any existing timeouts
+    animationTimeoutsRef.current.forEach(timeoutId => clearTimeout(timeoutId));
+    animationTimeoutsRef.current = [];
+
     if (matches && matches.length > 0 && !isLoading && !isRefreshing) {
-      setIsAnimating(true);
-      setAnimatedMatches(new Set());
+      // Check if matches have actually changed significantly (not just search filtering)
+      const matchesKey = matches.map(m => m.id).sort().join(',');
+      const lastMatchesKey = lastMatchesRef.current;
       
-      // Get current page matches
-      const currentPageMatches = matches.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-      
-      // Animate each match with staggered timing
-      currentPageMatches.forEach((match, index) => {
-        setTimeout(() => {
-          setAnimatedMatches(prev => new Set([...prev, match.id]));
-        }, index * 100); // 100ms delay between each match
-      });
-      
-      // Stop animating after all matches are shown
-      setTimeout(() => {
+      // Only animate if this is a new set of matches or first load
+      if (lastMatchesKey !== matchesKey) {
+        lastMatchesRef.current = matchesKey;
+        
+        setIsAnimating(true);
+        setAnimatedMatches(new Set());
+        
+        // Get current page matches
+        const currentPageMatches = matches.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+        
+        // Animate each match sequentially - each waits for the previous to complete
+        currentPageMatches.forEach((match, index) => {
+          const timeoutId = setTimeout(() => {
+            setAnimatedMatches(prev => new Set([...prev, match.id]));
+          }, index * 500 + 100); // Reduced delay to 500ms for faster animation
+          animationTimeoutsRef.current.push(timeoutId);
+        });
+        
+        // Stop animating after all matches are shown
+        const finalTimeoutId = setTimeout(() => {
+          setIsAnimating(false);
+        }, currentPageMatches.length * 500 + 600);
+        animationTimeoutsRef.current.push(finalTimeoutId);
+      } else {
+        // If matches haven't changed, just show all matches immediately
+        setAnimatedMatches(new Set(matches.map(m => m.id)));
         setIsAnimating(false);
-      }, currentPageMatches.length * 100 + 500);
+      }
     }
   }, [matches, currentPage, itemsPerPage, isLoading, isRefreshing]);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      animationTimeoutsRef.current.forEach(timeoutId => clearTimeout(timeoutId));
+    };
+  }, []);
 
   return (
     <>
@@ -205,7 +235,7 @@ export default function MatchTable({
           }
           
           .match-row-animate {
-            animation: swipeInFromLeft 0.6s ease-out forwards;
+            animation: swipeInFromLeft 1.2s ease-out forwards;
             transform: translateX(-100%);
             opacity: 0;
           }
@@ -249,26 +279,58 @@ export default function MatchTable({
         </div>
       ) : (!matches || matches.length === 0) ? (
         <div className="flex flex-col items-center justify-center py-16 px-4">
-          <div className="text-gray-400 text-6xl mb-4">📊</div>
-          <h3 className="text-xl font-semibold text-white mb-2">No Matches Added</h3>
-          <p className="text-gray-400 text-center max-w-md">
-            No matches have been added to the system yet. Click 'Export Match' to add your first match.
-          </p>
+          {isFiltered ? (
+            // No search results found
+            <>
+              <div className="text-gray-400 text-6xl mb-4">🔍</div>
+              <h3 className="text-xl font-semibold text-white mb-2">No Results Found</h3>
+              <p className="text-gray-400 text-center max-w-md">
+                No matches found matching your search criteria. Try adjusting your search terms or filters.
+              </p>
+            </>
+          ) : (
+            // No matches in system at all
+            <>
+              <div className="text-gray-400 text-6xl mb-4">📊</div>
+              <h3 className="text-xl font-semibold text-white mb-2">No Matches Added</h3>
+              <p className="text-gray-400 text-center max-w-md">
+                No matches have been added to the system yet. Click 'Export Match' to add your first match.
+              </p>
+            </>
+          )}
         </div>
       ) : (
-        <table className="w-full text-sm whitespace-nowrap">
-          <thead className="sticky top-0 z-10" style={{ background: '#23283a' }}>
-            <tr>
-              <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[120px] rounded-tl-xl">DATE</th>
-              <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[120px]">RESULTS</th>
-              <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[120px]">TEAM</th>
-              <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[220px]">Banning Phase 1</th>
-              <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[220px]">Picks</th>
-              <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[220px]">Banning Phase 2</th>
-              <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[220px]">Picks</th>
-              <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[100px] rounded-tr-xl">Actions</th>
-            </tr>
-          </thead>
+        <>
+          {/* Search Results Indicator */}
+          {isFiltered && (
+            <div className="mb-3 p-3 bg-blue-900/30 border border-blue-600/50 rounded-lg">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-blue-200">
+                  <strong>{matches.length}</strong> match{matches.length !== 1 ? 'es' : ''} found
+                  {totalMatches && totalMatches !== matches.length && (
+                    <span className="text-gray-400"> (out of {totalMatches} total)</span>
+                  )}
+                </span>
+                {matches.length === 0 && (
+                  <span className="text-yellow-300">Try adjusting your search criteria</span>
+                )}
+              </div>
+            </div>
+          )}
+          
+          <table className="w-full text-sm whitespace-nowrap">
+            <thead className="sticky top-0 z-10" style={{ background: '#23283a' }}>
+              <tr>
+                <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[120px] rounded-tl-xl">DATE</th>
+                <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[120px]">RESULTS</th>
+                <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[120px]">TEAM</th>
+                <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[220px]">Banning Phase 1</th>
+                <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[220px]">Picks</th>
+                <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[220px]">Banning Phase 2</th>
+                <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[220px]">Picks</th>
+                <th className="py-3 px-4 text-blue-300 font-bold text-center min-w-[100px] rounded-tr-xl">Actions</th>
+              </tr>
+            </thead>
           <tbody>
             {matches
               .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
@@ -533,7 +595,8 @@ export default function MatchTable({
               </React.Fragment>
             ))}
           </tbody>
-        </table>
+          </table>
+        </>
       )}
       
       {/* Pagination Controls */}

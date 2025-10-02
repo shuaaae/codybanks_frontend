@@ -7,4 +7,5 @@ export { default as AlertModal } from './AlertModal';
 export { default as LaneSelectModal } from './LaneSelectModal';
 export { default as ExportModal } from './ExportModal';
 export { default as HeroPickerModal } from './HeroPickerModal';
-export { default as HeroStats } from './HeroStats'; 
+export { default as HeroStats } from './HeroStats';
+export { default as SearchBar } from './SearchBar'; 

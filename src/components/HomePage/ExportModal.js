@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FaTimes, FaPlay } from 'react-icons/fa';
 import DraftBoard from '../MockDraft/DraftBoard';
+import { buildApiUrl } from '../../config/api';
 
 // Import role icons
 import expIcon from '../../assets/exp.png';
@@ -718,6 +719,8 @@ export default function ExportModal({
 
   // Extract lane assignments and player assignments from existing form data
   const extractLaneAssignmentsFromFormData = () => {
+    console.log('DEBUG: extractLaneAssignmentsFromFormData called with picks:', picks);
+    
     const blueLanes = ['exp', 'jungler', 'mid', 'gold', 'roam']; // Default order
     const redLanes = ['exp', 'jungler', 'mid', 'gold', 'roam']; // Default order
     const bluePlayers = [null, null, null, null, null];
@@ -725,13 +728,17 @@ export default function ExportModal({
     
     // Extract lane assignments and player assignments from existing picks data
     if (picks.blue) {
+      console.log('DEBUG: Processing blue picks:', picks.blue);
       [1, 2].forEach(phase => {
         if (picks.blue[phase] && Array.isArray(picks.blue[phase])) {
+          console.log(`DEBUG: Processing blue phase ${phase}:`, picks.blue[phase]);
           picks.blue[phase].forEach((pick, phaseIndex) => {
+            console.log(`DEBUG: Blue phase ${phase}, pick ${phaseIndex}:`, pick);
             if (pick && pick.lane) {
               const slotIndex = phase === 1 ? phaseIndex : phaseIndex + 3;
               if (slotIndex < 5) {
                 blueLanes[slotIndex] = pick.lane;
+                console.log(`DEBUG: Set blueLanes[${slotIndex}] = ${pick.lane}`);
                 if (pick.player) {
                   bluePlayers[slotIndex] = pick.player;
                 }
@@ -743,13 +750,17 @@ export default function ExportModal({
     }
     
     if (picks.red) {
+      console.log('DEBUG: Processing red picks:', picks.red);
       [1, 2].forEach(phase => {
         if (picks.red[phase] && Array.isArray(picks.red[phase])) {
+          console.log(`DEBUG: Processing red phase ${phase}:`, picks.red[phase]);
           picks.red[phase].forEach((pick, phaseIndex) => {
+            console.log(`DEBUG: Red phase ${phase}, pick ${phaseIndex}:`, pick);
             if (pick && pick.lane) {
               const slotIndex = phase === 1 ? phaseIndex : phaseIndex + 3;
               if (slotIndex < 5) {
                 redLanes[slotIndex] = pick.lane;
+                console.log(`DEBUG: Set redLanes[${slotIndex}] = ${pick.lane}`);
                 if (pick.player) {
                   redPlayers[slotIndex] = pick.player;
                 }
@@ -760,11 +771,15 @@ export default function ExportModal({
       });
     }
     
+    console.log('DEBUG: Final extracted lanes:', { blueLanes, redLanes });
+    
     // Check if any lane assignments were found
     const defaultLaneOrder = ['exp', 'jungler', 'mid', 'gold', 'roam'];
     const hasCustomAssignments = 
       JSON.stringify(blueLanes) !== JSON.stringify(defaultLaneOrder) ||
       JSON.stringify(redLanes) !== JSON.stringify(defaultLaneOrder);
+    
+    console.log('DEBUG: Has custom assignments:', hasCustomAssignments);
     
     return hasCustomAssignments ? { 
       blue: blueLanes, 
@@ -1057,6 +1072,26 @@ export default function ExportModal({
         setLaneAssignments({ blue: existingData.blue, red: existingData.red });
         setCustomLaneAssignments({ blue: existingData.blue, red: existingData.red });
         setPlayerAssignments({ blue: existingData.bluePlayers, red: existingData.redPlayers });
+      }
+    }
+    
+    // CRITICAL FIX: For editing matches, also extract lane assignments from form data
+    if (isEditing) {
+      console.log('DEBUG: Extracting lane assignments for editing match, picks data:', picks);
+      const existingData = extractLaneAssignmentsFromFormData();
+      console.log('DEBUG: Extracted lane assignments data:', existingData);
+      
+      if (existingData) {
+        console.log('CRITICAL FIX: Loading existing lane assignments and player assignments from form data for editing match:', existingData);
+        setLaneAssignments({ blue: existingData.blue, red: existingData.red });
+        setCustomLaneAssignments({ blue: existingData.blue, red: existingData.red });
+        setPlayerAssignments({ blue: existingData.bluePlayers, red: existingData.redPlayers });
+      } else {
+        console.log('WARNING: No lane assignments found in existing match data, using defaults');
+        // Set default lane assignments if none found
+        const defaultLanes = { blue: ['exp', 'jungler', 'mid', 'gold', 'roam'], red: ['exp', 'jungler', 'mid', 'gold', 'roam'] };
+        setLaneAssignments(defaultLanes);
+        setCustomLaneAssignments(defaultLanes);
       }
       
       // Capture original draft state for new matches
@@ -2375,6 +2410,69 @@ export default function ExportModal({
     }
   };
 
+  // Function to update lane assignment in the database
+  const updateLaneAssignmentInDatabase = async (matchId, playerId, oldRole, newRole, heroName) => {
+    try {
+      const latestTeam = JSON.parse(localStorage.getItem('latestTeam') || '{}');
+      const teamId = latestTeam.id;
+      
+      if (!teamId) {
+        console.error('No team ID found for lane assignment update');
+        return;
+      }
+
+      console.log('Updating lane assignment:', {
+        matchId,
+        playerId,
+        oldRole,
+        newRole,
+        heroName,
+        teamId
+      });
+
+      const apiUrl = `${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/match-player-assignments/update-lane`;
+      console.log('Making update-lane request to:', apiUrl);
+      console.log('Request payload:', {
+        match_id: matchId,
+        team_id: teamId,
+        player_id: playerId,
+        old_role: oldRole,
+        new_role: newRole,
+        hero_name: heroName
+      });
+      
+      const updateResponse = await fetch(apiUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          match_id: matchId,
+          team_id: teamId,
+          player_id: playerId,
+          old_role: oldRole,
+          new_role: newRole,
+          hero_name: heroName
+        })
+      });
+      
+      const body = await updateResponse.text();
+      console.log('Lane update response status:', updateResponse.status, 'body:', body);
+
+      if (updateResponse.ok) {
+        const result = JSON.parse(body);
+        console.log('Lane assignment updated in database:', result);
+        return result;
+      } else {
+        console.error('Failed to update lane assignment:', body);
+        throw new Error(`Failed to update lane assignment: ${body}`);
+      }
+    } catch (error) {
+      console.error('Error updating lane assignment in database:', error);
+      throw error;
+    }
+  };
+
   // Function to update hero assignment in the database
   const updateHeroAssignmentInDatabase = async (matchId, playerId, role, oldHeroName, newHeroName, assignmentId = null) => {
     try {
@@ -2726,7 +2824,9 @@ export default function ExportModal({
   };
 
   // IMPROVED: Lane assignment handler - only assigns lanes, no player selection
-  const handleLaneAssignment = (team, slotIndex, lane) => {
+  const handleLaneAssignment = async (team, slotIndex, lane) => {
+    const oldLane = laneAssignments[team][slotIndex];
+    
     // Simply assign the lane without asking for player selection
     // Player assignment will happen when a hero is picked (if multiple players exist)
     setLaneAssignments(prev => ({
@@ -2738,12 +2838,46 @@ export default function ExportModal({
     
     console.log(`Assigned ${lane} lane to slot ${slotIndex} for ${team} team`);
     
+    // If we're editing an existing match and there's a player assigned to this slot,
+    // update the database with the new lane assignment
+    if (isEditing && editingMatchId && oldLane !== lane) {
+      try {
+        // Find the player assigned to this slot
+        const teamPicks = draftPicks[team] || [];
+        const slotPick = teamPicks[slotIndex];
+        
+        if (slotPick && slotPick.player && slotPick.player.id) {
+          console.log(`Updating lane assignment for player ${slotPick.player.name} from ${oldLane} to ${lane}`);
+          
+          await updateLaneAssignmentInDatabase(
+            editingMatchId,
+            slotPick.player.id,
+            oldLane,
+            lane,
+            slotPick.hero?.name || slotPick.name || slotPick.hero
+          );
+          
+          console.log(`Successfully updated lane assignment for ${slotPick.player.name}`);
+        }
+      } catch (error) {
+        console.error('Error updating lane assignment in database:', error);
+        // Revert the lane assignment if database update failed
+        setLaneAssignments(prev => ({
+          ...prev,
+          [team]: prev[team].map((currentLane, idx) => 
+            idx === slotIndex ? oldLane : currentLane
+          )
+        }));
+        alert('Failed to update lane assignment. Please try again.');
+      }
+    }
+    
     // Note: Player assignment will be handled during hero selection
     // This ensures that the player is directly tied to the specific hero they'll play
   };
 
   // NEW: Handle lane swapping between slots via drag and drop
-  const handleLaneSwap = (team, sourceSlotIndex, targetSlotIndex) => {
+  const handleLaneSwap = async (team, sourceSlotIndex, targetSlotIndex) => {
     if (sourceSlotIndex === targetSlotIndex) return; // No swap needed
     
     console.log(`Starting LANE-ONLY swap for ${team} team: slot ${sourceSlotIndex} <-> slot ${targetSlotIndex}`);
@@ -2752,6 +2886,10 @@ export default function ExportModal({
     const currentLaneAssignments = laneAssignments;
     const newLaneAssignments = { ...currentLaneAssignments };
     const teamLanes = [...newLaneAssignments[team]];
+    
+    // Store original lanes for potential rollback
+    const originalSourceLane = teamLanes[sourceSlotIndex];
+    const originalTargetLane = teamLanes[targetSlotIndex];
     
     // Swap the lanes
     const temp = teamLanes[sourceSlotIndex];
@@ -2763,6 +2901,68 @@ export default function ExportModal({
       sourceLane: temp,
       targetLane: teamLanes[sourceSlotIndex]
     });
+    
+    // If we're editing an existing match, update the database using the swap endpoint
+    if (isEditing && editingMatchId) {
+      try {
+        const teamPicks = draftPicks[team] || [];
+        const sourcePick = teamPicks[sourceSlotIndex];
+        const targetPick = teamPicks[targetSlotIndex];
+        
+        // Use the new swap endpoint for simultaneous updates
+        if (sourcePick && sourcePick.player && sourcePick.player.id && 
+            targetPick && targetPick.player && targetPick.player.id) {
+          
+          console.log(`Swapping lane assignments for players ${sourcePick.player.name} and ${targetPick.player.name}`);
+          
+          const swapData = {
+            match_id: editingMatchId,
+            team_id: sourcePick.player.team_id || targetPick.player.team_id,
+            player1_id: sourcePick.player.id,
+            player2_id: targetPick.player.id,
+            player1_new_role: teamLanes[sourceSlotIndex],
+            player2_new_role: teamLanes[targetSlotIndex],
+            player1_hero_name: sourcePick.hero?.name || sourcePick.name || sourcePick.hero,
+            player2_hero_name: targetPick.hero?.name || targetPick.name || targetPick.hero
+          };
+          
+          const response = await fetch(buildApiUrl('/match-player-assignments/swap-lanes'), {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(swapData)
+          });
+          
+          if (!response.ok) {
+            let errorMessage = 'Failed to swap lane assignments';
+            try {
+              const errorData = await response.json();
+              errorMessage = errorData.error || errorMessage;
+            } catch (parseError) {
+              // If response is not JSON (e.g., HTML error page), use status text
+              errorMessage = `Server error: ${response.status} ${response.statusText}`;
+            }
+            throw new Error(errorMessage);
+          }
+          
+          console.log(`Successfully swapped lane assignments for both players`);
+        }
+      } catch (error) {
+        console.error('Error swapping lane assignments in database:', error);
+        // Revert the lane assignments if database update failed
+        setLaneAssignments(prev => ({
+          ...prev,
+          [team]: prev[team].map((currentLane, idx) => {
+            if (idx === sourceSlotIndex) return originalSourceLane;
+            if (idx === targetSlotIndex) return originalTargetLane;
+            return currentLane;
+          })
+        }));
+        alert('Failed to swap lane assignments. Please try again.');
+        return;
+      }
+    }
     
     // Update lane assignments state
     setLaneAssignments(newLaneAssignments);
@@ -4065,7 +4265,7 @@ export default function ExportModal({
                          {/* Player Photo */}
                          <div className="relative w-12 h-12 rounded-xl overflow-hidden shadow-lg">
                            <img 
-                             src={player.photo || defaultPlayer} 
+                             src={player.photo ? (player.photo.startsWith('http') ? player.photo : `${buildApiUrl('')}/api/player-photo/${encodeURIComponent(player.photo.replace('players/', ''))}`) : defaultPlayer} 
                              alt={player.name}
                              className="w-full h-full object-cover"
                              onError={(e) => {

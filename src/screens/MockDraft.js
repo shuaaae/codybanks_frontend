@@ -878,6 +878,7 @@ export default function MockDraft() {
         currentUser={currentUser}
         onLogout={handleLogout}
         onShowProfile={() => setShowProfileModal(true)}
+        currentMode="scrim"
       />
 
       {/* Draft Restoration Notification */}

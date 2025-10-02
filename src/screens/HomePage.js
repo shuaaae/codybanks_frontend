@@ -116,6 +116,14 @@ export default function HomePage() {
     return savedMode || 'scrim';
   });
 
+  // Search state
+  const [searchFilters, setSearchFilters] = useState({
+    term: '',
+    type: 'all',
+    date: ''
+  });
+  const [filteredMatches, setFilteredMatches] = useState([]);
+
   // Handle mode change
   const handleModeChange = async (newMode) => {
     console.log('Switching to mode:', newMode);
@@ -370,6 +378,123 @@ export default function HomePage() {
     });
     return map;
   }, [heroList]);
+
+  // Search filtering logic
+  useEffect(() => {
+    if (!matches || matches.length === 0) {
+      setFilteredMatches([]);
+      return;
+    }
+
+    let filtered = [...matches];
+
+    // Apply search filters
+    if (searchFilters.term || searchFilters.date) {
+      filtered = matches.filter(match => {
+        const searchTerm = searchFilters.term.toLowerCase();
+        const matchDate = match.match_date;
+
+        // Date filter
+        if (searchFilters.date) {
+          const filterDate = new Date(searchFilters.date).toISOString().split('T')[0];
+          const matchDateFormatted = new Date(matchDate).toISOString().split('T')[0];
+          if (matchDateFormatted !== filterDate) {
+            return false;
+          }
+        }
+
+        // If no search term, and date matches (or no date filter), include the match
+        if (!searchTerm) {
+          return true;
+        }
+
+        // Search by type
+        switch (searchFilters.type) {
+          case 'heroes':
+            return matchContainsHero(match, searchTerm);
+          case 'teams':
+            return matchContainsTeam(match, searchTerm);
+          case 'date':
+            // Date filtering is already handled above
+            return true;
+          case 'all':
+          default:
+            return matchContainsHero(match, searchTerm) || matchContainsTeam(match, searchTerm);
+        }
+      });
+    }
+
+    setFilteredMatches(filtered);
+  }, [matches, searchFilters]);
+
+  // Helper function to check if match contains a specific hero
+  const matchContainsHero = (match, searchTerm) => {
+    if (!match.teams) return false;
+    
+    return match.teams.some(team => {
+      // Check picks1
+      if (team.picks1 && Array.isArray(team.picks1)) {
+        const hasHeroInPicks1 = team.picks1.some(pick => {
+          const heroName = typeof pick === 'string' ? pick : pick?.hero;
+          return heroName && heroName.toLowerCase().includes(searchTerm);
+        });
+        if (hasHeroInPicks1) return true;
+      }
+
+      // Check picks2
+      if (team.picks2 && Array.isArray(team.picks2)) {
+        const hasHeroInPicks2 = team.picks2.some(pick => {
+          const heroName = typeof pick === 'string' ? pick : pick?.hero;
+          return heroName && heroName.toLowerCase().includes(searchTerm);
+        });
+        if (hasHeroInPicks2) return true;
+      }
+
+      // Check banning_phase1
+      if (team.banning_phase1 && Array.isArray(team.banning_phase1)) {
+        const hasHeroInBans1 = team.banning_phase1.some(ban => {
+          const heroName = typeof ban === 'string' ? ban : ban?.hero || ban?.name || ban?.heroName;
+          return heroName && heroName.toLowerCase().includes(searchTerm);
+        });
+        if (hasHeroInBans1) return true;
+      }
+
+      // Check banning_phase2
+      if (team.banning_phase2 && Array.isArray(team.banning_phase2)) {
+        const hasHeroInBans2 = team.banning_phase2.some(ban => {
+          const heroName = typeof ban === 'string' ? ban : ban?.hero || ban?.name || ban?.heroName;
+          return heroName && heroName.toLowerCase().includes(searchTerm);
+        });
+        if (hasHeroInBans2) return true;
+      }
+
+      return false;
+    });
+  };
+
+  // Helper function to check if match contains a specific team name
+  const matchContainsTeam = (match, searchTerm) => {
+    if (!match.teams) return false;
+    
+    return match.teams.some(team => {
+      return team.team && team.team.toLowerCase().includes(searchTerm);
+    });
+  };
+
+  // Search handlers - memoized to prevent unnecessary re-renders
+  const handleSearch = useCallback((searchData) => {
+    setSearchFilters(searchData);
+    setCurrentPage(1); // Reset to first page when searching
+  }, []);
+
+  const handleClearSearch = useCallback(() => {
+    setSearchFilters({
+      term: '',
+      type: 'all',
+      date: ''
+    });
+    setCurrentPage(1);
+  }, []);
 
   // Preload critical hero images for better perceived performance
   useEffect(() => {
@@ -813,6 +938,33 @@ export default function HomePage() {
       console.log('HomePage - Saving match with payload:', payload);
       console.log('HomePage - Annual map value:', annualMap);
       console.log('HomePage - Annual map type:', typeof annualMap);
+      
+      // Validate payload before sending
+      console.log('HomePage - Validating payload:', {
+        match_date: payload.match_date,
+        winner: payload.winner,
+        blueTeam: blueTeam,
+        redTeam: redTeam,
+        turtle_taken: payload.turtle_taken,
+        lord_taken: payload.lord_taken,
+        annual_map: payload.annual_map,
+        team_id: payload.team_id,
+        match_type: payload.match_type
+      });
+      
+      // Validate winner field specifically
+      if (!payload.winner || typeof payload.winner !== 'string' || payload.winner.trim() === '') {
+        console.error('HomePage - Invalid winner field:', payload.winner);
+        showAlert('Winner field is required and must be a valid team name', 'error');
+        return;
+      }
+      
+      // Validate team names
+      if (!blueTeam || !redTeam) {
+        console.error('HomePage - Missing team names:', { blueTeam, redTeam });
+        showAlert('Both team names are required', 'error');
+        return;
+      }
       console.log('HomePage - Annual map length:', annualMap ? annualMap.length : 'null/undefined');
       console.log('HomePage - Payload annual_map field:', payload.annual_map);
       console.log('HomePage - Payload keys:', Object.keys(payload));
@@ -889,26 +1041,53 @@ export default function HomePage() {
       currentTeamId
     });
     
+    // Debug the banning and picks data
+    console.log('Debug banning data:', {
+      blue1: banning.blue1,
+      blue2: banning.blue2,
+      red1: banning.red1,
+      red2: banning.red2
+    });
+    
+    console.log('Debug picks data:', {
+      blue1: picks.blue?.[1],
+      blue2: picks.blue?.[2],
+      red1: picks.red?.[1],
+      red2: picks.red?.[2]
+    });
+
     // 1) Update parent match with teams data
+    // Only include picks and bans if they have actual data
+    const buildTeamData = (teamName, teamColor, teamBanning, teamPicks) => {
+      const teamData = {
+        team: teamName,
+        team_color: teamColor,
+      };
+      
+      // Only include banning data if it has content
+      if (Array.isArray(teamBanning.phase1) && teamBanning.phase1.length > 0) {
+        teamData.banning_phase1 = teamBanning.phase1;
+      }
+      if (Array.isArray(teamBanning.phase2) && teamBanning.phase2.length > 0) {
+        teamData.banning_phase2 = teamBanning.phase2;
+      }
+      
+      // Only include picks data if it has content
+      if (Array.isArray(teamPicks[1]) && teamPicks[1].length > 0) {
+        teamData.picks1 = teamPicks[1];
+      }
+      if (Array.isArray(teamPicks[2]) && teamPicks[2].length > 0) {
+        teamData.picks2 = teamPicks[2];
+      }
+      
+      return teamData;
+    };
+
     const fullMatchPayload = {
       ...matchPayload,
       teams: [
-        {
-          team: blueTeam,
-          team_color: 'blue',
-          banning_phase1: banning.blue1 || [],
-          banning_phase2: banning.blue2 || [],
-          picks1: picks.blue?.[1] || [],
-          picks2: picks.blue?.[2] || [],
-        },
-        {
-          team: redTeam,
-          team_color: 'red',
-          banning_phase1: banning.red1 || [],
-          banning_phase2: banning.red2 || [],
-          picks1: picks.red?.[1] || [],
-          picks2: picks.red?.[2] || [],
-        }
+        buildTeamData(blueTeam, 'blue', { phase1: banning.blue1, phase2: banning.blue2 }, picks.blue || {}),
+        buildTeamData(redTeam, 'red', { phase1: banning.red1, phase2: banning.red2 }, picks.red || {})
       ],
       // Include player assignments if available
       player_assignments: matchPayload.player_assignments || null
@@ -960,6 +1139,13 @@ export default function HomePage() {
     if (!res.ok) {
       const txt = await res.text();
       console.error('Update match failed:', res.status, txt);
+      console.error('Request payload that failed:', fullMatchPayload);
+      console.error('Response details:', {
+        status: res.status,
+        statusText: res.statusText,
+        headers: Object.fromEntries(res.headers.entries()),
+        body: txt
+      });
       throw new Error(`Update match failed: ${res.status} ${txt}`);
     }
 
@@ -1499,6 +1685,7 @@ export default function HomePage() {
         currentUser={currentUser}
         onLogout={handleLogout}
         onShowProfile={() => setShowProfileModal(true)}
+        currentMode={matchMode}
       />
 
       {/* Main Content */}
@@ -1516,10 +1703,12 @@ export default function HomePage() {
               onHeroStatsClick={() => setShowHeroStatsModal(true)}
               currentMode={matchMode}
               onModeChange={handleModeChange}
+              onSearch={handleSearch}
+              onClearSearch={handleClearSearch}
             />
             {/* Match Table */}
             <MatchTable 
-              matches={matches}
+              matches={filteredMatches.length > 0 || searchFilters.term || searchFilters.date ? filteredMatches : matches}
               isLoading={isLoading}
               isRefreshing={isRefreshing}
               errorMessage={errorMessage}
@@ -1534,6 +1723,8 @@ export default function HomePage() {
               onEditMatch={handleEditMatch}
               heroMap={heroMap}
               setCurrentPage={setCurrentPage}
+              totalMatches={matches.length}
+              isFiltered={!!(searchFilters.term || searchFilters.date)}
             />
           </div>
         </div>

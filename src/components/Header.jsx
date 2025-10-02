@@ -9,6 +9,7 @@ const Header = ({
   currentUser,
   onLogout,
   onShowProfile,
+  currentMode,
   navLinks = [
     { label: 'DATA DRAFT', path: '/home' },
     { label: 'MOCK DRAFT', path: '/mock-draft' },
@@ -99,7 +100,7 @@ const Header = ({
 
   return (
     <header
-      className="w-full fixed top-0 left-0 z-50 flex items-center justify-between px-12"
+      className="w-full fixed top-0 left-0 z-50 flex items-center px-12"
       style={{
         height: 80,
         background: 'transparent',
@@ -116,8 +117,22 @@ const Header = ({
         />
       </div>
 
+      {/* Title - Show on all pages when currentMode is available */}
+      {currentMode && (
+        <div className="flex-1 flex justify-center">
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-blue-200 leading-tight">
+              Cody Banks Draft and Statistics System
+            </h1>
+            <span className="text-base text-gray-300">
+              <strong>{currentMode === 'scrim' ? 'SCRIM MODE' : 'TOURNAMENT MODE'}</strong>
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Nav Links */}
-      <nav className="flex justify-end w-full">
+      <nav className="flex items-center">
         <ul className="gap-10 hidden md:flex mr-8">
           {navLinks.map(link => (
             <li key={link.label}>
