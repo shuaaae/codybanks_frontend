@@ -1,5 +1,18 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { Bar } from 'react-chartjs-2';
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend } from 'chart.js';
+import { Chart } from 'react-chartjs-2';
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  LineElement,
+  PointElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 const PerformanceModal = ({ 
   isOpen, 
@@ -492,39 +505,57 @@ const PerformanceModal = ({
               <div className="text-yellow-300 font-bold mb-3 text-sm">PLAYER'S HERO PERFORMANCE CHART</div>
               {heroStats.length > 0 && (
                 <div className="w-full bg-gray-800 rounded-lg p-3" style={{ height: '300px' }}>
-                <Bar
+                {console.log('Chart data debug:', {
+                  heroStats: heroStats,
+                  successRates: heroStats.map(row => ({ 
+                    hero: row.hero, 
+                    success_rate: row.success_rate, 
+                    winrate: row.winrate,
+                    win: row.win,
+                    lose: row.lose,
+                    total: row.total
+                  }))
+                })}
+                <Chart
                   data={{
                     labels: heroStats.map(row => row.hero),
                     datasets: [
                       {
                         label: 'SUCCESS RATE',
-                        data: heroStats.map(row => row.winrate),
+                        data: heroStats.map(row => row.success_rate || row.winrate || 0),
                         type: 'line',
                         borderColor: '#facc15',
-                        backgroundColor: '#facc15',
+                        backgroundColor: 'rgba(250, 204, 21, 0.1)',
                         yAxisID: 'y1',
                         fill: false,
                         tension: 0.4,
-                        pointRadius: 4,
+                        pointRadius: 6,
+                        pointHoverRadius: 8,
                         pointBackgroundColor: '#facc15',
+                        pointBorderColor: '#facc15',
+                        pointBorderWidth: 2,
                         order: 0,
                         z: 10,
+                        spanGaps: false,
                       },
                       {
                         label: 'WIN',
                         data: heroStats.map(row => Math.round(row.win)),
+                        type: 'bar',
                         backgroundColor: '#3b82f6',
                         order: 1,
                       },
                       {
                         label: 'LOSE',
                         data: heroStats.map(row => Math.round(row.lose)),
+                        type: 'bar',
                         backgroundColor: '#f87171',
                         order: 2,
                       },
                       {
                         label: 'TOTAL',
                         data: heroStats.map(row => Math.round(row.total)),
+                        type: 'bar',
                         backgroundColor: '#22c55e',
                         order: 3,
                       },
@@ -533,12 +564,49 @@ const PerformanceModal = ({
                   options={{
                     responsive: true,
                     maintainAspectRatio: false,
+                    interaction: {
+                      mode: 'index',
+                      intersect: false,
+                    },
                     plugins: {
-                      legend: { position: 'top' },
-                      tooltip: { mode: 'index', intersect: false },
+                      legend: { 
+                        position: 'top',
+                        labels: {
+                          usePointStyle: true,
+                          padding: 20,
+                        }
+                      },
+                      tooltip: { 
+                        mode: 'index', 
+                        intersect: false,
+                        callbacks: {
+                          label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                              label += ': ';
+                            }
+                            if (context.dataset.label === 'SUCCESS RATE') {
+                              label += context.parsed.y + '%';
+                            } else {
+                              label += context.parsed.y;
+                            }
+                            return label;
+                          }
+                        }
+                      },
                     },
                     scales: {
+                      x: {
+                        display: true,
+                        title: {
+                          display: true,
+                          text: 'Heroes'
+                        }
+                      },
                       y: { 
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
                         beginAtZero: true, 
                         title: { display: true, text: 'Count' },
                         ticks: {
@@ -549,12 +617,19 @@ const PerformanceModal = ({
                         }
                       },
                       y1: {
-                        beginAtZero: true,
+                        type: 'linear',
+                        display: true,
                         position: 'right',
+                        beginAtZero: true,
                         title: { display: true, text: 'Success Rate (%)' },
                         min: 0,
                         max: 100,
                         grid: { drawOnChartArea: false },
+                        ticks: {
+                          callback: function(value) {
+                            return value + '%';
+                          }
+                        }
                       },
                     },
                   }}

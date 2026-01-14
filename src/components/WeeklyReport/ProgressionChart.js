@@ -245,7 +245,7 @@ export default function ProgressionChart({ progressionData, loading, isDrawingMo
             },
             title: {
               display: true,
-              text: `TRAINING PROGRESS TRACKER - ${generateDateLabels().join(' to ')}`,
+              text: 'TRAINING PROGRESS TRACKER',
               font: { size: 22, weight: 'bold' },
               color: '#fff',
               padding: { top: 10, bottom: 20 }

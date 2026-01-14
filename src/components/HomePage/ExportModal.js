@@ -56,7 +56,17 @@ function normalizeRole(role) {
 // Build a lane -> player map from the current playerAssignments (the lane owners)
 function makePlayerByLaneMap(playersArr = []) {
   const map = {};
-  (playersArr || []).forEach(p => {
+  
+  // Handle both array and object formats
+  let players = [];
+  if (Array.isArray(playersArr)) {
+    players = playersArr;
+  } else if (playersArr && typeof playersArr === 'object') {
+    // If it's an object with role keys, convert to array
+    players = Object.values(playersArr).filter(p => p && typeof p === 'object');
+  }
+  
+  (players || []).forEach(p => {
     const key = normalizeRole(p?.role);
     if (key && !map[key]) map[key] = p;
   });
@@ -71,7 +81,10 @@ function makePlayerByLaneMap(playersArr = []) {
 function buildLaneAnchoredPicks(team, draftPicks, customLaneAssignments, playerAssignments) {
   const teamDraft = Array.isArray(draftPicks?.[team]) ? draftPicks[team] : [];
   const finalLanes = Array.isArray(customLaneAssignments?.[team]) ? customLaneAssignments[team] : [];
-  const laneOwners  = makePlayerByLaneMap(playerAssignments?.[team]);
+  
+  // Ensure playerAssignments is properly formatted
+  const teamPlayerAssignments = playerAssignments?.[team];
+  const laneOwners = makePlayerByLaneMap(teamPlayerAssignments);
 
   return teamDraft.slice(0, 5).map((h, index) => {
     if (!h || !h.name) return null;
@@ -127,9 +140,42 @@ export default function ExportModal({
   isEditing = false,
   editingMatchId = null,
   currentTeamName = '',
-  matchMode = 'scrim'
+  matchMode = 'scrim',
+  playerAssignments = { 
+    blue: { exp: [], jungler: [], mid: [], gold: [], roam: [] }, 
+    red: { exp: [], jungler: [], mid: [], gold: [], roam: [] } 
+  },
+  setPlayerAssignments
 }) {
   
+  // Helper function to get default player name based on lane
+  const getDefaultPlayerName = (lane) => {
+    const defaultNames = {
+      'exp': 'asd',
+      'jungler': 'dsa', 
+      'mid': 'ads',
+      'gold': 'das',
+      'roam': 'sad'
+    };
+    return defaultNames[lane] || 'unknown';
+  };
+
+  // Helper function to get the best player for a role (prioritizes non-substitutes)
+  const getBestPlayerForRole = (rolePlayers) => {
+    if (!rolePlayers || rolePlayers.length === 0) {
+      return null;
+    }
+    
+    // First try to find a non-substitute player
+    const primaryPlayer = rolePlayers.find(p => !p.is_substitute);
+    if (primaryPlayer) {
+      return primaryPlayer;
+    }
+    
+    // If no primary player, return the first available player
+    return rolePlayers[0];
+  };
+
   // Helper function to extract hero names from banning data (handles both strings and objects)
   const getBanHeroNames = (banArray) => {
     if (!Array.isArray(banArray) || banArray.length === 0) return [];
@@ -352,10 +398,6 @@ export default function ExportModal({
   const [pendingLaneAssignment, setPendingLaneAssignment] = useState(null); // { team, slotIndex, lane }
   const [pendingHeroSelection, setPendingHeroSelection] = useState(null); // { hero, lane, team }
   const [availablePlayers, setAvailablePlayers] = useState([]); // Players available for the selected lane
-  const [playerAssignments, setPlayerAssignments] = useState({
-    blue: [null, null, null, null, null], // [exp_player, jungler_player, mid_player, gold_player, roam_player]
-    red: [null, null, null, null, null]
-  });
 
   // Function to get team players from localStorage
   const getTeamPlayers = (teamName) => {
@@ -417,30 +459,27 @@ export default function ExportModal({
     }
 
     const laneOrder = ['exp', 'jungler', 'mid', 'gold', 'roam'];
-    const newAssignments = [...playerAssignments[team]];
+    // Since playerAssignments is now an object with role-based arrays, we can't spread it
+    // This function is now mainly for logging and validation purposes
+    console.log(`Auto-assigning players to lanes for ${team} team...`);
+    console.log(`Available players:`, teamPlayers);
 
     laneOrder.forEach((lane, index) => {
-      // Only assign if no player is currently assigned to this lane
-      if (!newAssignments[index]) {
-        const playerForLane = teamPlayers.find(player => 
-          player.role && player.role.toLowerCase() === lane.toLowerCase()
-        );
-        
-        if (playerForLane) {
-          newAssignments[index] = playerForLane;
-          console.log(`✅ Auto-assigned ${playerForLane.name} to ${lane} lane for ${team} team`);
-        } else {
-          console.warn(`⚠️ No player found with role ${lane} for ${team} team`);
-        }
+      const playersForLane = teamPlayers.filter(player => 
+        player.role && player.role.toLowerCase() === lane.toLowerCase()
+      );
+      
+      if (playersForLane.length > 0) {
+        console.log(`✅ Found ${playersForLane.length} player(s) for ${lane} lane:`, playersForLane.map(p => p.name));
+      } else {
+        console.warn(`⚠️ No player found with role ${lane} for ${team} team`);
       }
     });
 
-    setPlayerAssignments(prev => ({
-      ...prev,
-      [team]: newAssignments
-    }));
+    // Note: playerAssignments is now a prop, so we can't modify it here
+    // The parent component should handle player assignment updates
 
-    return newAssignments;
+    return true;
   };
 
   // Function to automatically assign heroes to players based on their roles
@@ -489,15 +528,7 @@ export default function ExportModal({
               return newPicks;
             });
             
-            // Update player assignments
-            setPlayerAssignments(prev => {
-              const newAssignments = prev && prev[team] ? [...prev[team]] : [null, null, null, null, null];
-              newAssignments[laneIndex] = playerForLane;
-              return {
-                ...prev,
-                [team]: newAssignments
-              };
-            });
+            // Note: playerAssignments is now a prop, so we can't modify it here
             
             console.log(`✅ Auto-assigned hero ${pick.name} to player ${playerForLane.name} for ${lane} lane`);
             
@@ -685,7 +716,7 @@ export default function ExportModal({
         }
         
         console.log('Reconstructed player assignments from existing picks:', reconstructedAssignments);
-        setPlayerAssignments(reconstructedAssignments);
+        // Note: playerAssignments is now a prop, so we can't modify it here
       }
       
       console.log(`Team fields initialized: Blue='${blueTeam}', Red='${redTeam}'`);
@@ -852,7 +883,7 @@ export default function ExportModal({
           blue: [null, null, null, null, null], // [exp_player, jungler_player, mid_player, gold_player, roam_player]
           red: [null, null, null, null, null]
         };
-        setPlayerAssignments(initialPlayerAssignments);
+        // Note: playerAssignments is now a prop, so we can't modify it here
       }
       // If there are existing lane assignments, preserve them by not resetting
     }
@@ -1030,10 +1061,7 @@ export default function ExportModal({
           red: redLanes
         });
         
-        setPlayerAssignments({
-          blue: bluePlayers,
-          red: redPlayers
-        });
+        // Note: playerAssignments is now a prop, so we can't modify it here
         
         // Update custom lane assignments to match
         setCustomLaneAssignments({
@@ -1071,7 +1099,7 @@ export default function ExportModal({
         console.log('CRITICAL FIX: Loading existing lane assignments and player assignments from form data for new match:', existingData);
         setLaneAssignments({ blue: existingData.blue, red: existingData.red });
         setCustomLaneAssignments({ blue: existingData.blue, red: existingData.red });
-        setPlayerAssignments({ blue: existingData.bluePlayers, red: existingData.redPlayers });
+        // Note: playerAssignments is now a prop, so we can't modify it here
       }
     }
     
@@ -1085,7 +1113,7 @@ export default function ExportModal({
         console.log('CRITICAL FIX: Loading existing lane assignments and player assignments from form data for editing match:', existingData);
         setLaneAssignments({ blue: existingData.blue, red: existingData.red });
         setCustomLaneAssignments({ blue: existingData.blue, red: existingData.red });
-        setPlayerAssignments({ blue: existingData.bluePlayers, red: existingData.redPlayers });
+        // Note: playerAssignments is now a prop, so we can't modify it here
       } else {
         console.log('WARNING: No lane assignments found in existing match data, using defaults');
         // Set default lane assignments if none found
@@ -1343,15 +1371,7 @@ export default function ExportModal({
           });
           
           // Update player assignments
-          setPlayerAssignments(prev => {
-            const laneIndex = ['exp', 'jungler', 'mid', 'gold', 'roam'].indexOf(actualLane);
-            if (laneIndex !== -1) {
-              const updated = { ...prev };
-              updated[currentDraftStep.team][laneIndex] = assignedPlayer;
-              return updated;
-            }
-            return prev;
-          });
+          // Note: playerAssignments is now a prop, so we can't modify it here
         } else {
           console.log(`❌ No players found for role ${actualLane}. Available players:`, players);
           
@@ -1394,15 +1414,7 @@ export default function ExportModal({
             });
             
             // Update player assignments
-            setPlayerAssignments(prev => {
-              const laneIndex = ['exp', 'jungler', 'mid', 'gold', 'roam'].indexOf(actualLane);
-              if (laneIndex !== -1) {
-                const updated = { ...prev };
-                updated[currentDraftStep.team][laneIndex] = fallbackPlayer;
-                return updated;
-              }
-              return prev;
-            });
+            // Note: playerAssignments is now a prop, so we can't modify it here
           } else {
             // No players for this role - show error
             alert(`No players found for ${actualLane} role. Please check your team configuration.`);
@@ -1638,7 +1650,7 @@ export default function ExportModal({
      });
      
      // CRITICAL: Update playerAssignments state to match actual picks
-     setPlayerAssignments(updatedPlayerAssignments);
+     // Note: playerAssignments is now a prop, so we can't modify it here
      console.log('Updated playerAssignments state to match actual picks:', updatedPlayerAssignments);
 
      // CRITICAL: Save lane assignments to customLaneAssignments for draft analysis
@@ -1671,6 +1683,8 @@ export default function ExportModal({
       resetDraftToOriginal();
     }
     syncDraftDataToForm();
+    // Close the draft modal
+    setShowDraft(false);
   };
 
   // Handle confirm with draft sync for editing
@@ -1712,7 +1726,7 @@ export default function ExportModal({
       
       console.log(`Merging player assignments for ${teamName} team:`, {
         teamPicks,
-        playerAssignments: currentPlayerAssignments || playerAssignments[teamName],
+        playerAssignments: currentPlayerAssignments,
         isCurrentTeam,
         currentTeamName,
         blueTeam,
@@ -1733,35 +1747,38 @@ export default function ExportModal({
                 }
                 
                 // Only fall back to playerAssignments if the pick doesn't have player data
-                const laneIndex = ['exp', 'jungler', 'mid', 'gold', 'roam'].indexOf(pick.lane);
-                const assignedPlayer = currentPlayerAssignments?.[laneIndex] || playerAssignments[teamName]?.[laneIndex];
+                const rolePlayers = currentPlayerAssignments?.[pick.lane] || [];
                 
-                console.log(`Processing ${teamName} pick for ${pick.lane} lane (index: ${laneIndex}):`, {
+                console.log(`Processing ${teamName} pick for ${pick.lane} lane:`, {
                   pick,
-                  assignedPlayer: assignedPlayer
+                  rolePlayers: rolePlayers
                 });
                 
-                if (laneIndex !== -1 && assignedPlayer) {
+                if (rolePlayers && rolePlayers.length > 0) {
+                  // Get the best player (non-substitute preferred) for this role
+                  const bestPlayer = getBestPlayerForRole(rolePlayers);
                   const result = {
                     ...pick,
-                    player: assignedPlayer
+                    player: bestPlayer.name
                   };
                   console.log(`Updated pick with player assignment from state:`, result);
                   return result;
                 } else {
-                  // Only show warning when not editing or when it's a new match
-                  if (!isEditing) {
-                    console.warn(`No player assigned to ${pick.lane} lane for ${teamName} team`);
-                  } else {
-                    console.log(`Editing mode: Skipping player assignment validation for ${pick.lane} lane`);
-                  }
+                  // For current team, if no player assignment found, use a default player name based on lane
+                  const defaultPlayerName = getDefaultPlayerName(pick.lane);
+                  const result = {
+                    ...pick,
+                    player: defaultPlayerName
+                  };
+                  console.log(`Using default player name for ${pick.lane}: ${defaultPlayerName}`);
+                  return result;
                 }
               } else {
                 // For opponent team, add placeholder player data
                 if (!pick.player) {
                   return {
                     ...pick,
-                    player: { name: `Opponent_${pick.lane}`, role: pick.lane }
+                    player: 'unknown'
                   };
                 }
               }
@@ -1786,11 +1803,25 @@ export default function ExportModal({
         if (finalPicks[team] && finalPicks[team][phase]) {
           finalPicks[team][phase] = finalPicks[team][phase].map(pick => {
             if (pick && !pick.player) {
-              // Add placeholder player data for any missing assignments
-              return {
-                ...pick,
-                player: { name: `Opponent_${pick.lane || 'unknown'}`, role: pick.lane || 'unknown' }
-              };
+              // Get current team name to determine if this is the current team
+              const latestTeam = JSON.parse(localStorage.getItem('latestTeam') || '{}');
+              const currentTeamName = latestTeam?.teamName || latestTeam?.name || '';
+              const isCurrentTeam = (team === 'blue' && blueTeam === currentTeamName) || 
+                                   (team === 'red' && redTeam === currentTeamName);
+              
+              if (isCurrentTeam) {
+                // For current team, use default player name based on lane
+                return {
+                  ...pick,
+                  player: getDefaultPlayerName(pick.lane)
+                };
+              } else {
+                // For opponent team, use 'unknown'
+                return {
+                  ...pick,
+                  player: 'unknown'
+                };
+              }
             }
             return pick;
           });
@@ -2272,10 +2303,7 @@ export default function ExportModal({
       red: ['exp', 'jungler', 'mid', 'gold', 'roam']
     });
     
-    setPlayerAssignments({
-      blue: [null, null, null, null, null],
-      red: [null, null, null, null, null]
-    });
+    // Note: playerAssignments is now a prop, so we can't modify it here
     
     // Reset modal states
     setShowPlayerSelection(false);
@@ -2358,10 +2386,6 @@ export default function ExportModal({
     
     if (!playerAssignments || typeof playerAssignments !== 'object') {
       issues.push('Player assignments is null/undefined or not an object');
-      setPlayerAssignments({
-        blue: [null, null, null, null, null],
-        red: [null, null, null, null, null]
-      });
     }
     
     // Check for invalid step values
@@ -3014,18 +3038,19 @@ export default function ExportModal({
         )
       }));
       
-      setPlayerAssignments(prev => {
-        const updated = {
+      // Update playerAssignments state with the selected player
+      if (setPlayerAssignments) {
+        setPlayerAssignments(prev => ({
           ...prev,
-          [team]: prev[team].map((currentPlayer, idx) => 
-            idx === slotIndex ? selectedPlayer : currentPlayer
-          )
-        };
-        console.log(`Assigned ${selectedPlayer.name} to ${lane} lane (slot ${slotIndex}) for ${team} team`);
-        console.log(`Updated playerAssignments for ${team}:`, updated[team]);
-        console.log(`Lane mapping: slot ${slotIndex} = ${lane} lane`);
-        return updated;
-      });
+          [team]: {
+            ...prev[team],
+            [lane]: [selectedPlayer] // Replace with the selected player
+          }
+        }));
+        console.log(`✅ Updated playerAssignments: ${selectedPlayer.name} assigned to ${lane} lane for ${team} team`);
+      } else {
+        console.log(`Would assign ${selectedPlayer.name} to ${lane} lane (slot ${slotIndex}) for ${team} team`);
+      }
       
       // Close modal and reset state
       setShowPlayerSelection(false);
@@ -3082,12 +3107,19 @@ export default function ExportModal({
         // Update player assignments for this lane
         const laneIndex = ['exp', 'jungler', 'mid', 'gold', 'roam'].indexOf(lane);
         if (laneIndex !== -1) {
-          setPlayerAssignments(prev => {
-            const updated = { ...prev };
-            updated[team][laneIndex] = selectedPlayer;
-            console.log(`Updated playerAssignments for ${lane} lane:`, selectedPlayer.name);
-            return updated;
-          });
+          // Update playerAssignments state with the selected player
+          if (setPlayerAssignments) {
+            setPlayerAssignments(prev => ({
+              ...prev,
+              [team]: {
+                ...prev[team],
+                [lane]: [selectedPlayer] // Replace with the selected player
+              }
+            }));
+            console.log(`✅ Updated playerAssignments for ${lane} lane:`, selectedPlayer.name);
+          } else {
+            console.log(`Would update playerAssignments for ${lane} lane:`, selectedPlayer.name);
+          }
         }
         
         // Close modal and reset state
@@ -3133,12 +3165,19 @@ export default function ExportModal({
         // Update player assignments for this lane
         const laneIndex = ['exp', 'jungler', 'mid', 'gold', 'roam'].indexOf(lane);
         if (laneIndex !== -1) {
-          setPlayerAssignments(prev => {
-            const updated = { ...prev };
-            updated[team][laneIndex] = selectedPlayer;
-            console.log(`Updated playerAssignments for ${lane} lane:`, selectedPlayer.name);
-            return updated;
-          });
+          // Update playerAssignments state with the selected player
+          if (setPlayerAssignments) {
+            setPlayerAssignments(prev => ({
+              ...prev,
+              [team]: {
+                ...prev[team],
+                [lane]: [selectedPlayer] // Replace with the selected player
+              }
+            }));
+            console.log(`✅ Updated playerAssignments for ${lane} lane:`, selectedPlayer.name);
+          } else {
+            console.log(`Would update playerAssignments for ${lane} lane:`, selectedPlayer.name);
+          }
         }
         
         // Close modal and reset state

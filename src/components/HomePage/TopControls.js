@@ -8,7 +8,8 @@ export default function TopControls({
   currentMode,
   onModeChange,
   onSearch,
-  onClearSearch
+  onClearSearch,
+  totalMatches = 0
 }) {
   return (
     <div className="flex flex-col w-full mb-2">
@@ -40,16 +41,29 @@ export default function TopControls({
           />
         </div>
 
+        {/* Match Count Display */}
+        <div className="order-3 md:order-3 mx-4 mb-4 md:mb-0">
+          <div className="bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 h-16 flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-sm text-gray-400">Total Matches</div>
+              <div className="text-xl font-bold text-white">
+                {totalMatches}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Right side - Mode Toggle */}
-        <div className="flex items-center order-3 md:order-3">
+        <div className="flex items-center order-4 md:order-4">
           <div className="flex bg-gray-800 rounded-lg p-1 border border-gray-600">
             <button
               className={`flex items-center px-4 py-2 rounded-md font-semibold transition-all duration-200 ${
                 currentMode === 'scrim'
-                  ? 'bg-blue-600 text-white shadow-lg transform scale-105'
+                  ? 'bg-blue-600 text-white shadow-lg transform scale-105 cursor-not-allowed opacity-75'
                   : 'text-gray-300 hover:text-white hover:bg-gray-700'
               }`}
-              onClick={() => onModeChange('scrim')}
+              onClick={currentMode === 'scrim' ? undefined : () => onModeChange('scrim')}
+              disabled={currentMode === 'scrim'}
             >
               <FaGamepad className="mr-2" />
               Scrim Mode
@@ -57,10 +71,11 @@ export default function TopControls({
             <button
               className={`flex items-center px-4 py-2 rounded-md font-semibold transition-all duration-200 ${
                 currentMode === 'tournament'
-                  ? 'bg-yellow-600 text-white shadow-lg transform scale-105'
+                  ? 'bg-yellow-600 text-white shadow-lg transform scale-105 cursor-not-allowed opacity-75'
                   : 'text-gray-300 hover:text-white hover:bg-gray-700'
               }`}
-              onClick={() => onModeChange('tournament')}
+              onClick={currentMode === 'tournament' ? undefined : () => onModeChange('tournament')}
+              disabled={currentMode === 'tournament'}
             >
               <FaTrophy className="mr-2" />
               Tournament Mode

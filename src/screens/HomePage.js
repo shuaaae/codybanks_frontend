@@ -78,10 +78,133 @@ export default function HomePage() {
   const [alertType, setAlertType] = useState('success'); // 'success' or 'error'
   const [showHeroStatsModal, setShowHeroStatsModal] = useState(false);
 
+  // Player assignments state - stores current team player assignments by role
+  const [playerAssignments, setPlayerAssignments] = useState({
+    blue: {
+      exp: [],
+      jungler: [],
+      mid: [],
+      gold: [],
+      roam: []
+    },
+    red: {
+      exp: [],
+      jungler: [],
+      mid: [],
+      gold: [],
+      roam: []
+    }
+  });
+
   const [heroPickerSelected, setHeroPickerSelected] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const navigate = useNavigate();
   const isMountedRef = useRef(true);
+
+  // Load current team player assignments
+  const loadPlayerAssignments = useCallback(async () => {
+    try {
+      const latestTeam = JSON.parse(localStorage.getItem('latestTeam') || '{}');
+      const teamId = latestTeam.id;
+
+      if (!teamId) {
+        console.log('No team ID found, skipping player assignments load');
+        return;
+      }
+
+      // Try the simple working endpoint first
+      const response = await fetch(`/api/players/assignments/${teamId}`);
+
+      if (response.ok) {
+        const result = await response.json();
+
+        if (result.assignments) {
+          // Convert assignments to playerAssignments format - handle multiple players per role
+          const blueAssignments = {};
+          const redAssignments = {};
+
+          // Initialize role arrays
+          ['exp', 'jungler', 'mid', 'gold', 'roam'].forEach(role => {
+            blueAssignments[role] = [];
+            redAssignments[role] = [];
+          });
+
+          // Map assignments by role (multiple players per role supported)
+          result.assignments.forEach(assignment => {
+            const playerData = {
+              name: assignment.player?.name || 'Unknown',
+              role: assignment.role,
+              hero_name: assignment.hero_name,
+              is_substitute: assignment.is_substitute || false
+            };
+
+            // Determine team color based on current team
+            const currentTeamName = latestTeam.teamName || latestTeam.name;
+            if (assignment.team === currentTeamName) {
+              blueAssignments[assignment.role].push(playerData);
+            } else {
+              redAssignments[assignment.role].push(playerData);
+            }
+          });
+
+          setPlayerAssignments({
+            blue: blueAssignments,
+            red: redAssignments
+          });
+
+          console.log('Player assignments loaded:', {
+            blue: blueAssignments,
+            red: redAssignments
+          });
+        }
+      } else {
+        console.log('Failed to load player assignments, using defaults');
+        // Set default assignments based on current team players - handle multiple players per role
+        const currentPlayers = JSON.parse(localStorage.getItem('currentPlayers') || '[]');
+        const defaultAssignments = {};
+
+        // Initialize role arrays
+        ['exp', 'jungler', 'mid', 'gold', 'roam'].forEach(role => {
+          defaultAssignments[role] = [];
+        });
+
+        // Map current players to roles (multiple players per role supported)
+        currentPlayers.forEach(player => {
+          if (defaultAssignments[player.role]) {
+            defaultAssignments[player.role].push({
+              name: player.name,
+              role: player.role,
+              hero_name: null,
+              is_substitute: player.is_substitute || false
+            });
+          }
+        });
+
+        setPlayerAssignments({
+          blue: defaultAssignments,
+          red: {}
+        });
+      }
+    } catch (error) {
+      console.error('Error loading player assignments:', error);
+      // Set empty assignments on error
+      const emptyAssignments = {};
+      ['exp', 'jungler', 'mid', 'gold', 'roam'].forEach(role => {
+        emptyAssignments[role] = [];
+      });
+      setPlayerAssignments({
+        blue: emptyAssignments,
+        red: emptyAssignments
+      });
+    }
+  }, []);
+
+  // Load player assignments when component mounts and when export modal opens
+  useEffect(() => {
+    if (modalState === 'export') {
+      loadPlayerAssignments();
+    }
+  }, [modalState, loadPlayerAssignments]);
 
   // Form field states for ExportModal
   const [matchDate, setMatchDate] = useState(() => {
@@ -95,17 +218,17 @@ export default function HomePage() {
   const [blueTeam, setBlueTeam] = useState('');
   const [redTeam, setRedTeam] = useState('');
   const [annualMap, setAnnualMap] = useState('');
-  
+
   // Debug annualMap state changes
   useEffect(() => {
     console.log('HomePage - annualMap state changed:', annualMap);
     console.log('HomePage - annualMap type:', typeof annualMap);
   }, [annualMap]);
-  
+
   // Edit match state
   const [isEditing, setIsEditing] = useState(false);
   const [editingMatchId, setEditingMatchId] = useState(null);
-  
+
   // Current team state
   const [currentTeamName, setCurrentTeamName] = useState('');
 
@@ -127,7 +250,7 @@ export default function HomePage() {
   // Handle mode change
   const handleModeChange = async (newMode) => {
     console.log('Switching to mode:', newMode);
-    
+
     // If currently editing a match, warn the user
     if (isEditing) {
       const confirmed = window.confirm(
@@ -141,18 +264,18 @@ export default function HomePage() {
       setEditingMatchId(null);
       resetFormData();
     }
-    
+
     // Save mode to localStorage
     localStorage.setItem('selectedMatchMode', newMode);
-    
+
     // Don't clear the entire cache - just switch modes
     setMatchMode(newMode);
-    
+
     // Check if we already have data for this mode
     const latestTeam = localStorage.getItem('latestTeam');
     const teamData = latestTeam ? JSON.parse(latestTeam) : null;
     const teamId = teamData?.id;
-    
+
     if (teamId) {
       try {
         // Try to get cached data first
@@ -167,7 +290,7 @@ export default function HomePage() {
           console.log(`No cached data for ${newMode} mode, fetching from API`);
           setIsLoading(true);
           setErrorMessage('');
-          
+
           const freshData = await getMatchesData(teamId, newMode);
           setMatches(freshData || []);
         }
@@ -266,22 +389,22 @@ export default function HomePage() {
       try {
         setIsLoading(true);
         setErrorMessage('');
-        
+
         // Get current team from localStorage
         const latestTeam = localStorage.getItem('latestTeam');
         const teamData = latestTeam ? JSON.parse(latestTeam) : null;
         const teamId = teamData?.id;
-        
+
         // Update current team name
         if (teamData?.teamName) {
           setCurrentTeamName(teamData.teamName);
         }
-        
+
         console.log('Loading matches data for team:', teamId);
         const data = await getMatchesData(teamId, matchMode);
-        
+
         console.log('Loaded matches:', data);
-        
+
         // Debug: Log banning data for each match
         if (data && data.length > 0) {
           console.log('=== MATCH DATA DEBUG ===');
@@ -302,9 +425,9 @@ export default function HomePage() {
           });
           console.log('=== END MATCH DATA DEBUG ===');
         }
-        
+
         setMatches(data || []);
-        
+
         // Preload data for the other mode to ensure smooth switching
         if (teamId) {
           const otherMode = matchMode === 'scrim' ? 'tournament' : 'scrim';
@@ -314,7 +437,7 @@ export default function HomePage() {
             // Don't show error for preload failures
           });
         }
-        
+
       } catch (error) {
         console.error('Error loading matches data:', error);
         setErrorMessage('Failed to load matches');
@@ -363,10 +486,10 @@ export default function HomePage() {
 
     // Update activity every 2 minutes
     const interval = setInterval(updateActivity, 2 * 60 * 1000);
-    
+
     // Also update immediately
     updateActivity();
-    
+
     return () => clearInterval(interval);
   }, []);
 
@@ -430,7 +553,7 @@ export default function HomePage() {
   // Helper function to check if match contains a specific hero
   const matchContainsHero = (match, searchTerm) => {
     if (!match.teams) return false;
-    
+
     return match.teams.some(team => {
       // Check picks1
       if (team.picks1 && Array.isArray(team.picks1)) {
@@ -475,7 +598,7 @@ export default function HomePage() {
   // Helper function to check if match contains a specific team name
   const matchContainsTeam = (match, searchTerm) => {
     if (!match.teams) return false;
-    
+
     return match.teams.some(team => {
       return team.team && team.team.toLowerCase().includes(searchTerm);
     });
@@ -499,11 +622,11 @@ export default function HomePage() {
   // Preload critical hero images for better perceived performance
   useEffect(() => {
     if (heroList.length > 0) {
-              const criticalHeroes = heroList.slice(0, 10); // Preload first 10 heroes
-        criticalHeroes.forEach(hero => {
-          const img = new Image();
-          img.src = `https://api.coachdatastatistics.site/heroes/${hero.role.toLowerCase()}/${hero.image}`;
-        });
+      const criticalHeroes = heroList.slice(0, 10); // Preload first 10 heroes
+      criticalHeroes.forEach(hero => {
+        const img = new Image();
+        img.src = `https://api.coachdatastatistics.site/heroes/${hero.role.toLowerCase()}/${hero.image}`;
+      });
     }
   }, [heroList]);
 
@@ -539,7 +662,7 @@ export default function HomePage() {
     setAnnualMap('');
     setNotes('');
     setPlaystyle('');
-    
+
     // Reset form field states
     const today = new Date();
     const year = today.getFullYear();
@@ -549,22 +672,22 @@ export default function HomePage() {
     setWinner('');
     setBlueTeam('');
     setRedTeam('');
-    
+
     // Reset pick flow state
     setCurrentPickSession(null);
     setHeroPickerMode(null);
     setPickerStep('lane');
-    
+
     // Reset editing state
     setIsEditing(false);
     setEditingMatchId(null);
-    
+
     // Reset form inputs (for backward compatibility)
     const matchDateInput = document.getElementById('match-date-input');
     const winnerInput = document.getElementById('winner-input');
     const blueTeamInput = document.getElementById('blue-team-input');
     const redTeamInput = document.getElementById('red-team-input');
-    
+
     if (matchDateInput) matchDateInput.value = '';
     if (winnerInput) winnerInput.value = '';
     if (blueTeamInput) blueTeamInput.value = '';
@@ -589,7 +712,7 @@ export default function HomePage() {
     setPlaystyle(match.playstyle || '');
 
     const blue = match.teams?.find(t => t.team_color === 'blue');
-    const red  = match.teams?.find(t => t.team_color === 'red');
+    const red = match.teams?.find(t => t.team_color === 'red');
 
     // Teams names
     setBlueTeam(blue?.team || '');
@@ -599,8 +722,8 @@ export default function HomePage() {
     setBanning({
       blue1: blue?.banning_phase1 || [],
       blue2: blue?.banning_phase2 || [],
-      red1:  red?.banning_phase1  || [],
-      red2:  red?.banning_phase2  || [],
+      red1: red?.banning_phase1 || [],
+      red2: red?.banning_phase2 || [],
     });
 
     // Picks (normalize shape and include player data)
@@ -608,22 +731,22 @@ export default function HomePage() {
       // Handle different data formats that might come from the backend
       if (typeof p === 'string') {
         // If it's just a string (hero name), create a basic structure
-        return { 
-          lane: null, 
+        return {
+          lane: null,
           hero: p,
           player: null
         };
       } else if (p && typeof p === 'object') {
         // If it's an object, normalize it
-        return { 
-          lane: p.lane || null, 
+        return {
+          lane: p.lane || null,
           hero: p.hero || p.heroName || p.name || null,
           player: p.player || null
         };
       }
       // Fallback for null/undefined
-      return { 
-        lane: null, 
+      return {
+        lane: null,
         hero: null,
         player: null
       };
@@ -643,12 +766,12 @@ export default function HomePage() {
     try {
       const latestTeam = JSON.parse(localStorage.getItem('latestTeam') || '{}');
       const teamId = latestTeam.id;
-      
+
       if (teamId) {
         console.log('Loading player assignments for match:', match.id, 'team:', teamId);
         const apiUrl = `${process.env.REACT_APP_API_URL || 'https://api.coachdatastatistics.site'}/api/match-player-assignments/match/${match.id}?team_id=${teamId}`;
         console.log('Fetching player assignments from:', apiUrl);
-        
+
         const response = await fetch(apiUrl, {
           method: 'GET',
           headers: {
@@ -657,103 +780,103 @@ export default function HomePage() {
           },
           mode: 'cors'
         });
-        
+
         if (!response.ok) {
           console.warn('Failed to load player assignments:', response.status, response.statusText);
           console.warn('Response URL:', response.url);
           // Continue with edit modal even if player assignments fail to load
         } else {
           const result = await response.json();
-        
-        if (result.assignments) {
-          // Convert assignments to playerAssignments format
-          const blueAssignments = [];
-          const redAssignments = [];
-          
-          // Initialize arrays with null values
-          for (let i = 0; i < 5; i++) {
-            blueAssignments.push(null);
-            redAssignments.push(null);
-          }
-          
-          // Process assignments by role
-          Object.entries(result.assignments).forEach(([role, assignments]) => {
-            if (assignments && assignments.length > 0) {
-              const assignment = assignments[0]; // Get the first assignment for this role
-              const player = assignment.player;
-              const laneIndex = ['exp', 'jungler', 'mid', 'gold', 'roam'].indexOf(role);
-              
-              if (laneIndex !== -1 && player) {
-                // Determine if this is blue or red team based on team name
-                const isBlueTeam = blue?.team === currentTeamName;
-                const isRedTeam = red?.team === currentTeamName;
-                
-                console.log('Processing assignment:', {
-                  role,
-                  player: player.name,
-                  hero_name: assignment.hero_name,
-                  isBlueTeam,
-                  isRedTeam,
-                  currentTeamName,
-                  blueTeam: blue?.team,
-                  redTeam: red?.team
-                });
-                
-                if (isBlueTeam) {
-                  blueAssignments[laneIndex] = {
-                    ...player,
-                    hero_name: assignment.hero_name
-                  };
-                  console.log(`Assigned ${player.name} to blue team ${role} lane`);
-                } else if (isRedTeam) {
-                  redAssignments[laneIndex] = {
-                    ...player,
-                    hero_name: assignment.hero_name
-                  };
-                  console.log(`Assigned ${player.name} to red team ${role} lane`);
-                } else {
-                  console.log(`Player ${player.name} not assigned to current team (${currentTeamName})`);
+
+          if (result.assignments) {
+            // Convert assignments to playerAssignments format
+            const blueAssignments = [];
+            const redAssignments = [];
+
+            // Initialize arrays with null values
+            for (let i = 0; i < 5; i++) {
+              blueAssignments.push(null);
+              redAssignments.push(null);
+            }
+
+            // Process assignments by role
+            Object.entries(result.assignments).forEach(([role, assignments]) => {
+              if (assignments && assignments.length > 0) {
+                const assignment = assignments[0]; // Get the first assignment for this role
+                const player = assignment.player;
+                const laneIndex = ['exp', 'jungler', 'mid', 'gold', 'roam'].indexOf(role);
+
+                if (laneIndex !== -1 && player) {
+                  // Determine if this is blue or red team based on team name
+                  const isBlueTeam = blue?.team === currentTeamName;
+                  const isRedTeam = red?.team === currentTeamName;
+
+                  console.log('Processing assignment:', {
+                    role,
+                    player: player.name,
+                    hero_name: assignment.hero_name,
+                    isBlueTeam,
+                    isRedTeam,
+                    currentTeamName,
+                    blueTeam: blue?.team,
+                    redTeam: red?.team
+                  });
+
+                  if (isBlueTeam) {
+                    blueAssignments[laneIndex] = {
+                      ...player,
+                      hero_name: assignment.hero_name
+                    };
+                    console.log(`Assigned ${player.name} to blue team ${role} lane`);
+                  } else if (isRedTeam) {
+                    redAssignments[laneIndex] = {
+                      ...player,
+                      hero_name: assignment.hero_name
+                    };
+                    console.log(`Assigned ${player.name} to red team ${role} lane`);
+                  } else {
+                    console.log(`Player ${player.name} not assigned to current team (${currentTeamName})`);
+                  }
                 }
               }
-            }
-          });
-          
-          // Update picks with player data
-          setPicks(prev => {
-            const updatedPicks = { ...prev };
-            
-            // Update both blue and red picks with player data
-            ['blue', 'red'].forEach(team => {
-              [1, 2].forEach(phase => {
-                if (updatedPicks[team] && updatedPicks[team][phase]) {
-                  updatedPicks[team][phase] = updatedPicks[team][phase].map((pick, index) => {
-                    if (pick && pick.lane) {
-                      const laneIndex = ['exp', 'jungler', 'mid', 'gold', 'roam'].indexOf(pick.lane);
-                      const player = team === 'blue' ? blueAssignments[laneIndex] : redAssignments[laneIndex];
-                      
-                      if (player) {
-                        console.log(`Updated ${team} team ${phase} pick ${index} with player:`, player);
-                        return {
-                          ...pick,
-                          player: player
-                        };
-                      }
-                    }
-                    return pick;
-                  });
-                }
-              });
             });
-            
-            return updatedPicks;
-          });
-          
-          console.log('Loaded player assignments for match:', {
-            blueAssignments,
-            redAssignments,
-            currentTeamName
-          });
-        }
+
+            // Update picks with player data
+            setPicks(prev => {
+              const updatedPicks = { ...prev };
+
+              // Update both blue and red picks with player data
+              ['blue', 'red'].forEach(team => {
+                [1, 2].forEach(phase => {
+                  if (updatedPicks[team] && updatedPicks[team][phase]) {
+                    updatedPicks[team][phase] = updatedPicks[team][phase].map((pick, index) => {
+                      if (pick && pick.lane) {
+                        const laneIndex = ['exp', 'jungler', 'mid', 'gold', 'roam'].indexOf(pick.lane);
+                        const player = team === 'blue' ? blueAssignments[laneIndex] : redAssignments[laneIndex];
+
+                        if (player) {
+                          console.log(`Updated ${team} team ${phase} pick ${index} with player:`, player);
+                          return {
+                            ...pick,
+                            player: player
+                          };
+                        }
+                      }
+                      return pick;
+                    });
+                  }
+                });
+              });
+
+              return updatedPicks;
+            });
+
+            console.log('Loaded player assignments for match:', {
+              blueAssignments,
+              redAssignments,
+              currentTeamName
+            });
+          }
         }
       }
     } catch (error) {
@@ -793,7 +916,7 @@ export default function HomePage() {
     const maxPicks = pickNum === 1 ? 3 : 2; // Phase 1: 3 picks, Phase 2: 2 picks
     const currentPicks = Array.isArray(picks[team][pickNum]) ? picks[team][pickNum] : [];
     const remainingPicks = maxPicks - currentPicks.length;
-    
+
     if (remainingPicks > 0) {
       setCurrentPickSession({
         team,
@@ -862,11 +985,11 @@ export default function HomePage() {
 
       // Check if this is comprehensive draft data (new format) or regular export data (old format)
       let banning, picks;
-      
+
       if (exportData.draftBans && exportData.draftPicks && exportData.laneAssignments && exportData.playerAssignments) {
         // This is comprehensive draft data - convert to the expected format
         console.log('Processing comprehensive draft data:', exportData);
-        
+
         // Convert draftBans to the expected banning format
         banning = {
           blue1: exportData.draftBans.blue.slice(0, 3) || [],
@@ -874,26 +997,36 @@ export default function HomePage() {
           red1: exportData.draftBans.red.slice(0, 3) || [],
           red2: exportData.draftBans.red.slice(3, 5) || []
         };
-        
+
         // Convert draftPicks to the expected picks format with lane assignments
-        const convertDraftPicks = (teamPicks, teamLanes, teamPlayers) => {
+        const convertDraftPicks = (teamPicks, teamLanes, teamPlayerAssignments) => {
           const picks1 = [];
           const picks2 = [];
-          
+
           teamPicks.forEach((hero, index) => {
             if (hero) {
               const lane = teamLanes[index] || 'unknown';
-              const player = teamPlayers[index] || null;
-              
+
+              // Find the player assigned to this lane from playerAssignments
+              let assignedPlayer = null;
+              if (teamPlayerAssignments && teamPlayerAssignments[lane] && teamPlayerAssignments[lane].length > 0) {
+                // Get the first (primary) player for this lane
+                assignedPlayer = teamPlayerAssignments[lane][0];
+              }
+
               const pickData = {
                 lane: lane,
                 hero: hero.name || hero,
-                player: player ? {
-                  ...player,
-                  hero_name: hero.name || hero
-                } : null
+                player: assignedPlayer ? assignedPlayer.name : null
               };
-              
+
+              console.log(`Converted pick: ${hero.name || hero} (${lane}) -> ${assignedPlayer ? assignedPlayer.name : 'null'}`, {
+                hero,
+                lane,
+                assignedPlayer,
+                teamPlayerAssignments
+              });
+
               // Distribute picks between phase 1 (first 3) and phase 2 (last 2)
               if (index < 3) {
                 picks1.push(pickData);
@@ -902,15 +1035,15 @@ export default function HomePage() {
               }
             }
           });
-          
+
           return { 1: picks1, 2: picks2 };
         };
-        
+
         picks = {
           blue: convertDraftPicks(exportData.draftPicks.blue, exportData.laneAssignments.blue, exportData.playerAssignments.blue),
           red: convertDraftPicks(exportData.draftPicks.red, exportData.laneAssignments.red, exportData.playerAssignments.red)
         };
-        
+
         console.log('Converted comprehensive draft data:', { banning, picks });
       } else {
         // This is regular export data - use as is
@@ -925,7 +1058,7 @@ export default function HomePage() {
         playstyle,
         annual_map: annualMap,
         turtle_taken: `${turtleTakenBlue || 0}-${turtleTakenRed || 0}`,
-        lord_taken:   `${lordTakenBlue || 0}-${lordTakenRed || 0}`,
+        lord_taken: `${lordTakenBlue || 0}-${lordTakenRed || 0}`,
         team_id: currentTeamId,
         match_type: matchMode,
         // Include player assignments for comprehensive draft data
@@ -934,11 +1067,11 @@ export default function HomePage() {
           red: exportData.playerAssignments.red
         } : null
       };
-      
+
       console.log('HomePage - Saving match with payload:', payload);
       console.log('HomePage - Annual map value:', annualMap);
       console.log('HomePage - Annual map type:', typeof annualMap);
-      
+
       // Validate payload before sending
       console.log('HomePage - Validating payload:', {
         match_date: payload.match_date,
@@ -951,14 +1084,14 @@ export default function HomePage() {
         team_id: payload.team_id,
         match_type: payload.match_type
       });
-      
+
       // Validate winner field specifically
       if (!payload.winner || typeof payload.winner !== 'string' || payload.winner.trim() === '') {
         console.error('HomePage - Invalid winner field:', payload.winner);
         showAlert('Winner field is required and must be a valid team name', 'error');
         return;
       }
-      
+
       // Validate team names
       if (!blueTeam || !redTeam) {
         console.error('HomePage - Missing team names:', { blueTeam, redTeam });
@@ -975,11 +1108,11 @@ export default function HomePage() {
         console.log('Match update completed, updating local state:', { updated, editingMatchId });
         console.log('UpdateMatch - API response annual_map:', updated.annual_map);
         console.log('UpdateMatch - API response keys:', Object.keys(updated));
-        
+
         // Clear cache and refresh matches list to ensure we have the latest data
         clearMatchesCacheForCombination(currentTeamId, matchMode);
         const refreshedMatches = await getMatchesData(currentTeamId, matchMode);
-        
+
         if (refreshedMatches && refreshedMatches.length > 0) {
           refreshedMatches.sort((a, b) => {
             if (a.match_date === b.match_date) return b.id - a.id;
@@ -988,9 +1121,9 @@ export default function HomePage() {
           setMatches(refreshedMatches);
           console.log('Matches list refreshed after update:', refreshedMatches);
         }
-        
+
         showAlert('Match updated!', 'success');
-        
+
         // Dispatch match updated event for player statistics refresh
         window.dispatchEvent(new CustomEvent('matchUpdated', {
           detail: {
@@ -1003,7 +1136,7 @@ export default function HomePage() {
       } else {
         const newMatch = await createMatch(payload, { banning, picks }); // keep your create flow
         showAlert('Match exported!', 'success');
-        
+
         // Dispatch match updated event for player statistics refresh
         window.dispatchEvent(new CustomEvent('matchUpdated', {
           detail: {
@@ -1030,7 +1163,7 @@ export default function HomePage() {
     // Get the current team ID from localStorage
     const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
     const currentTeamId = latestTeam?.id;
-    
+
     console.log('Updating match with data:', {
       matchId,
       matchPayload,
@@ -1040,7 +1173,7 @@ export default function HomePage() {
       redTeam,
       currentTeamId
     });
-    
+
     // Debug the banning and picks data
     console.log('Debug banning data:', {
       blue1: banning.blue1,
@@ -1048,7 +1181,7 @@ export default function HomePage() {
       red1: banning.red1,
       red2: banning.red2
     });
-    
+
     console.log('Debug picks data:', {
       blue1: picks.blue?.[1],
       blue2: picks.blue?.[2],
@@ -1063,7 +1196,7 @@ export default function HomePage() {
         team: teamName,
         team_color: teamColor,
       };
-      
+
       // Only include banning data if it has content
       if (Array.isArray(teamBanning.phase1) && teamBanning.phase1.length > 0) {
         teamData.banning_phase1 = teamBanning.phase1;
@@ -1071,7 +1204,7 @@ export default function HomePage() {
       if (Array.isArray(teamBanning.phase2) && teamBanning.phase2.length > 0) {
         teamData.banning_phase2 = teamBanning.phase2;
       }
-      
+
       // Only include picks data if it has content
       if (Array.isArray(teamPicks[1]) && teamPicks[1].length > 0) {
         teamData.picks1 = teamPicks[1];
@@ -1079,7 +1212,7 @@ export default function HomePage() {
       if (Array.isArray(teamPicks[2]) && teamPicks[2].length > 0) {
         teamData.picks2 = teamPicks[2];
       }
-      
+
       return teamData;
     };
 
@@ -1105,7 +1238,7 @@ export default function HomePage() {
         if (!activationSuccess) {
           console.warn('Team activation had issues, but proceeding with match update');
         }
-        
+
         // Wait a moment for the activation to complete
         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error) {
@@ -1115,11 +1248,11 @@ export default function HomePage() {
     }
 
     // Prepare headers with team ID for backend compatibility
-    const headers = { 
-      'Content-Type': 'application/json', 
-      'Accept': 'application/json' 
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
     };
-    
+
     if (currentTeamId) {
       headers['X-Active-Team-ID'] = currentTeamId;
     }
@@ -1132,10 +1265,10 @@ export default function HomePage() {
       headers,
       body: JSON.stringify(fullMatchPayload),
     });
-    
+
     console.log('API response status:', res.status);
     console.log('API response headers:', res.headers);
-    
+
     if (!res.ok) {
       const txt = await res.text();
       console.error('Update match failed:', res.status, txt);
@@ -1153,35 +1286,35 @@ export default function HomePage() {
     // Return the updated match data for frontend state update
     const updated = await res.json();
     console.log('Updated match data received:', updated);
-    
+
     // Update player assignments in the database to reflect hero changes
     if (currentTeamId && updated.teams) {
       try {
         console.log('Updating player assignments for match:', matchId);
-        
+
         // Process both teams
         for (const team of updated.teams) {
           const teamColor = team.team_color;
           const teamName = team.team;
-          
+
           // Get all picks for this team
           const allPicks = [
             ...(team.picks1 || []),
             ...(team.picks2 || [])
           ];
-          
+
           // Filter picks that have hero data and can be mapped to players
-          const picksWithPlayers = allPicks.filter(pick => 
+          const picksWithPlayers = allPicks.filter(pick =>
             (pick.hero || pick.name) && (pick.lane || pick.role)
           );
-          
+
           if (picksWithPlayers.length > 0) {
             console.log(`Updating player assignments for ${teamColor} team (${teamName}):`, picksWithPlayers);
-            
+
             // Get the appropriate players array for this team
             const latestTeam = JSON.parse(localStorage.getItem('latestTeam') || '{}');
             const teamPlayers = latestTeam?.players || [];
-            
+
             // Prepare assignments for this team with lane-based mapping
             const assignments = picksWithPlayers.map(pick => {
               // Find player ID by lane mapping
@@ -1196,20 +1329,20 @@ export default function HomePage() {
                 // Lane-based mapping: find player by role
                 const roleMapping = {
                   'exp': 'exp',
-                  'mid': 'mid', 
+                  'mid': 'mid',
                   'jungler': 'jungler',
                   'gold': 'gold',
                   'roam': 'roam'
                 };
                 const mappedRole = roleMapping[pick.lane];
                 if (mappedRole) {
-                  const player = teamPlayers.find(p => 
+                  const player = teamPlayers.find(p =>
                     p.role && p.role.toLowerCase() === mappedRole.toLowerCase()
                   );
                   playerId = player ? player.id : null;
                 }
               }
-              
+
               return {
                 player_id: playerId,
                 role: pick.lane || pick.role,
@@ -1219,13 +1352,13 @@ export default function HomePage() {
                 notes: null
               };
             }).filter(assignment => assignment.player_id); // Only include assignments with valid player IDs
-            
+
             // Skip API call if no valid assignments
             if (assignments.length === 0) {
               console.warn(`No valid player assignments found for ${teamColor} team, skipping assign API call`);
               continue;
             }
-            
+
             // Update player assignments
             try {
               const assignUrl = buildApiUrl('/match-player-assignments/assign');
@@ -1235,7 +1368,7 @@ export default function HomePage() {
                 team_id: currentTeamId,
                 assignments: assignments
               });
-              
+
               const assignmentResponse = await fetch(assignUrl, {
                 method: 'POST',
                 headers: {
@@ -1247,10 +1380,10 @@ export default function HomePage() {
                   assignments: assignments
                 })
               });
-              
+
               console.log(`Assign response status: ${assignmentResponse.status}`);
               console.log(`Assign response URL: ${assignmentResponse.url}`);
-              
+
               if (assignmentResponse.ok) {
                 const result = await assignmentResponse.json();
                 console.log(`✅ Player assignments updated for ${teamColor} team:`, result);
@@ -1274,16 +1407,16 @@ export default function HomePage() {
         // Don't throw - the match update was successful
       }
     }
-    
+
     // Trigger player statistics refresh after match update
-    window.dispatchEvent(new CustomEvent('matchUpdated', { 
-      detail: { 
-        matchId, 
+    window.dispatchEvent(new CustomEvent('matchUpdated', {
+      detail: {
+        matchId,
         teamId: currentTeamId,
-        matchData: updated 
-      } 
+        matchData: updated
+      }
     }));
-    
+
     return updated;
   }
 
@@ -1293,7 +1426,7 @@ export default function HomePage() {
     let bluePlayers = [];
     let redPlayers = [];
     let latestTeam = null;
-    
+
     try {
       latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
       if (latestTeam && latestTeam.teamName) {
@@ -1316,42 +1449,42 @@ export default function HomePage() {
     // Helper to get player name with lane-based mapping
     const getPlayerName = (p, playersArr) => {
       console.log(`getPlayerName called with:`, { pick: p, playersArr });
-      
+
       // If player data is already stored in the pick, use it (this handles substitute players correctly)
       if (p.player && typeof p.player === 'object' && p.player.name) {
         console.log(`Using stored player object: ${p.player.name}`);
         return p.player.name;
       }
-      
+
       // If player is just a string name, use it
       if (p.player && typeof p.player === 'string') {
         console.log(`Using stored player string: ${p.player}`);
         return p.player;
       }
-      
+
       // Lane-based mapping: Find player by lane assignment
       if (p.lane && playersArr && playersArr.length > 0) {
         const roleMapping = {
           'exp': 'exp',
           'mid': 'mid',
-          'jungler': 'jungler', 
+          'jungler': 'jungler',
           'gold': 'gold',
           'roam': 'roam'
         };
-        
+
         const mappedRole = roleMapping[p.lane];
         if (mappedRole) {
-          const playerByRole = playersArr.find(player => 
+          const playerByRole = playersArr.find(player =>
             player.role && player.role.toLowerCase() === mappedRole.toLowerCase()
           );
-          
+
           if (playerByRole) {
             console.log(`Using lane-based mapping (${p.lane} -> ${mappedRole}): ${playerByRole.name}`);
             return playerByRole.name;
           }
         }
       }
-      
+
       // If no player found, log a warning but don't skip the pick
       console.warn(`Pick missing player data for ${p.lane} lane with hero ${p.hero} - using fallback`);
       return 'Unknown Player'; // Return a fallback instead of null
@@ -1427,7 +1560,7 @@ export default function HomePage() {
         if (!activationSuccess) {
           console.warn('Team activation had issues, but proceeding with match creation');
         }
-        
+
         // Wait a moment for the activation to complete
         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error) {
@@ -1437,11 +1570,11 @@ export default function HomePage() {
     }
 
     // Prepare headers with team ID for backend compatibility
-    const headers = { 
-      'Content-Type': 'application/json', 
-      'Accept': 'application/json' 
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
     };
-    
+
     if (latestTeam?.id) {
       headers['X-Active-Team-ID'] = latestTeam.id;
     }
@@ -1466,29 +1599,29 @@ export default function HomePage() {
     if (latestTeam?.id && createdMatch.id) {
       try {
         console.log('Creating player assignments for new match:', createdMatch.id);
-        
+
         // Process both teams
         for (const team of createdMatch.teams || fullPayload.teams) {
           const teamColor = team.team_color;
           const teamName = team.team;
-          
+
           // Get all picks for this team
           const allPicks = [
             ...(team.picks1 || []),
             ...(team.picks2 || [])
           ];
-          
+
           // Filter picks that have hero data and can be mapped to players
-          const picksWithPlayers = allPicks.filter(pick => 
+          const picksWithPlayers = allPicks.filter(pick =>
             (pick.hero || pick.name) && (pick.lane || pick.role)
           );
-          
+
           if (picksWithPlayers.length > 0) {
             console.log(`Creating player assignments for ${teamColor} team (${teamName}):`, picksWithPlayers);
-            
+
             // Get the appropriate players array for this team
             const teamPlayers = teamColor === 'blue' ? bluePlayers : redPlayers;
-            
+
             // Prepare assignments for this team with lane-based mapping
             const assignments = picksWithPlayers.map(pick => {
               // Find player ID by lane mapping
@@ -1503,20 +1636,20 @@ export default function HomePage() {
                 // Lane-based mapping: find player by role
                 const roleMapping = {
                   'exp': 'exp',
-                  'mid': 'mid', 
+                  'mid': 'mid',
                   'jungler': 'jungler',
                   'gold': 'gold',
                   'roam': 'roam'
                 };
                 const mappedRole = roleMapping[pick.lane];
                 if (mappedRole) {
-                  const player = teamPlayers.find(p => 
+                  const player = teamPlayers.find(p =>
                     p.role && p.role.toLowerCase() === mappedRole.toLowerCase()
                   );
                   playerId = player ? player.id : null;
                 }
               }
-              
+
               return {
                 player_id: playerId,
                 role: pick.lane || pick.role,
@@ -1526,13 +1659,13 @@ export default function HomePage() {
                 notes: null
               };
             }).filter(assignment => assignment.player_id); // Only include assignments with valid player IDs
-            
+
             // Skip API call if no valid assignments
             if (assignments.length === 0) {
               console.warn(`No valid player assignments found for ${teamColor} team, skipping assign API call`);
               continue;
             }
-            
+
             // Create player assignments
             try {
               const assignUrl = buildApiUrl('/match-player-assignments/assign');
@@ -1542,7 +1675,7 @@ export default function HomePage() {
                 team_id: latestTeam.id,
                 assignments: assignments
               });
-              
+
               const assignmentResponse = await fetch(assignUrl, {
                 method: 'POST',
                 headers: {
@@ -1554,10 +1687,10 @@ export default function HomePage() {
                   assignments: assignments
                 })
               });
-              
+
               console.log(`Assign response status: ${assignmentResponse.status}`);
               console.log(`Assign response URL: ${assignmentResponse.url}`);
-              
+
               if (assignmentResponse.ok) {
                 const result = await assignmentResponse.json();
                 console.log(`✅ Player assignments created for ${teamColor} team:`, result);
@@ -1604,14 +1737,14 @@ export default function HomePage() {
     } else {
       setMatches([]);
     }
-    
+
     // Trigger player statistics refresh after new match creation
-    window.dispatchEvent(new CustomEvent('matchUpdated', { 
-      detail: { 
+    window.dispatchEvent(new CustomEvent('matchUpdated', {
+      detail: {
         matchId: null, // New match, no ID yet
         teamId: matchPayload.team_id,
-        matchData: fullPayload 
-      } 
+        matchData: fullPayload
+      }
     }));
   }
 
@@ -1630,14 +1763,14 @@ export default function HomePage() {
       // Get the current team ID from localStorage
       const latestTeam = JSON.parse(localStorage.getItem('latestTeam'));
       const currentTeamId = latestTeam?.id;
-      
+
       // Prepare headers with team ID for backend compatibility
       const headers = {};
       if (currentTeamId) {
         headers['X-Active-Team-ID'] = currentTeamId;
       }
-      
-              const response = await fetch(buildApiUrl(`/matches/${matchId}`), { 
+
+      const response = await fetch(buildApiUrl(`/matches/${matchId}`), {
         method: 'DELETE',
         headers
       });
@@ -1679,9 +1812,9 @@ export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: `linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url(${navbarBg}) center/cover, #181A20` }}>
       <PageTitle title="Data Draft" />
-      
+
       {/* Header Component */}
-      <Header 
+      <Header
         currentUser={currentUser}
         onLogout={handleLogout}
         onShowProfile={() => setShowProfileModal(true)}
@@ -1693,7 +1826,7 @@ export default function HomePage() {
         <div className="flex flex-col items-center w-full">
           <div className="w-[1600px] max-w-[95vw] mx-auto p-4 rounded-2xl" style={{ background: '#23232a', boxShadow: '0 4px 24px 0 rgba(0,0,0,0.25)', border: '1px solid #23283a', marginTop: 0 }}>
             {/* Top Controls */}
-            <TopControls 
+            <TopControls
               onExportClick={() => {
                 console.log('HomePage - Export button clicked');
                 console.log('HomePage - Current annualMap before opening modal:', annualMap);
@@ -1705,9 +1838,10 @@ export default function HomePage() {
               onModeChange={handleModeChange}
               onSearch={handleSearch}
               onClearSearch={handleClearSearch}
+              totalMatches={matches.length}
             />
             {/* Match Table */}
-            <MatchTable 
+            <MatchTable
               matches={filteredMatches.length > 0 || searchFilters.term || searchFilters.date ? filteredMatches : matches}
               isLoading={isLoading}
               isRefreshing={isRefreshing}
@@ -1730,7 +1864,7 @@ export default function HomePage() {
         </div>
       </main>
       {/* Export Modal */}
-      <ExportModal 
+      <ExportModal
         isOpen={modalState === 'export' || modalState === 'heroPicker'}
         onClose={() => {
           resetFormData();
@@ -1765,10 +1899,10 @@ export default function HomePage() {
         setBlueTeam={setBlueTeam}
         redTeam={redTeam}
         setRedTeam={setRedTeam}
-        onBanClick={(target) => { 
-          setHeroPickerTarget(target); 
-          setHeroPickerMode('ban'); 
-          setModalState('heroPicker'); 
+        onBanClick={(target) => {
+          setHeroPickerTarget(target);
+          setHeroPickerMode('ban');
+          setModalState('heroPicker');
         }}
         onPickClick={(team, pickNum) => startPickFlow(team, pickNum)}
         setBanning={setBanning}
@@ -1780,6 +1914,8 @@ export default function HomePage() {
         match={matches.find(m => m.id === editingMatchId)}
         currentTeamName={currentTeamName}
         matchMode={matchMode}
+        playerAssignments={playerAssignments}
+        setPlayerAssignments={setPlayerAssignments}
       />
       {/* Lane Select Modal */}
       <LaneSelectModal
@@ -1833,7 +1969,7 @@ export default function HomePage() {
         banning={banning}
         heroPickerTarget={heroPickerTarget}
       />
-      
+
       {/* Hero Picker Modal for Picks */}
       <HeroPickerModal
         open={modalState === 'heroPicker' && pickerStep === 'hero' && pickTarget && pickTarget.lane && currentPickSession}
@@ -1857,7 +1993,7 @@ export default function HomePage() {
         heroPickerTarget={heroPickerTarget}
       />
       {/* Delete Confirmation Modal */}
-      <DeleteConfirmModal 
+      <DeleteConfirmModal
         isOpen={modalState === 'deleteConfirm' && deleteConfirmMatch}
         onClose={() => {
           setModalState('none');
@@ -1884,9 +2020,9 @@ export default function HomePage() {
           }
         `}
       </style>
-      
+
       {/* Match Hover Modal */}
-      <MatchHoverModal 
+      <MatchHoverModal
         match={matches.find(m => m.id === hoveredMatchId)}
         heroMap={heroMap}
         isVisible={!!hoveredMatchId}
@@ -1899,9 +2035,9 @@ export default function HomePage() {
           setHoveredMatchId(null);
         }}
       />
-      
+
       {/* Profile Modal */}
-      <ProfileModal 
+      <ProfileModal
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
         user={currentUser}
@@ -1909,17 +2045,17 @@ export default function HomePage() {
           setCurrentUser(updatedUser);
         }}
       />
-      
+
       {/* Alert Modal */}
-      <AlertModal 
+      <AlertModal
         isOpen={showAlertModal}
         onClose={() => setShowAlertModal(false)}
         message={alertMessage}
         type={alertType}
       />
-      
+
       {/* Hero Stats Modal */}
-      <HeroStats 
+      <HeroStats
         isOpen={showHeroStatsModal}
         onClose={() => setShowHeroStatsModal(false)}
         matches={matches}
